@@ -1,0 +1,18 @@
+# Python
+__pycache__/
+*.pyc
+.env
+.DS_Store
+
+# Shared platform venv — rebuild from .claude/skills/run-alphalens/SKILL.md
+.venv/
+
+# ── The three surfaces are each their own git repo with their own remote ──
+# Do NOT track them here. `git add` on a directory containing a .git records a
+# gitlink (mode 160000) — a broken submodule pointer whose contents are not
+# tracked and which renders as a dead link on GitHub.
+# Commit inside a surface with:  git -C stock_simulator commit ...
+# To make them real submodules instead, see the note in CLAUDE.md.
+/stock_simulator/
+/stock-valuation-dashboard/
+/SentimentFinance/
