@@ -1,228 +1,315 @@
 ---
 name: run-alphalens
-description: Build, run, and drive AlphaLens - the retail-investor platform with three surfaces (stock_simulator replay/paper-trading, stock-valuation-dashboard DCF, SentimentFinance CLI). Use when asked to run, start, build, test, screenshot, or interact with AlphaLens or any of its three surfaces.
+description: Build, run, and drive AlphaOS - the financial analysis and trading simulation platform in the AlphaLens folder (root app.py) - and its four surfaces (stock_simulator, stock-valuation-dashboard, SentimentFinance, AlgoBacktester). Use when asked to run, start, build, test, screenshot, or interact with AlphaOS, AlphaLens, the overview, valuation, news sentiment, backtester or trading simulator.
 ---
 
-AlphaLens is one platform with three surfaces: a **simulator** (Streamlit candle
-replay + paper trading), a **valuation dashboard** (Streamlit DCF/multiples), and
-a **sentiment** CLI (stdlib only). All three are driven headlessly by one script,
-`.claude/skills/run-alphalens/driver.py`, which runs the real `app.py` through
-`streamlit.testing.v1.AppTest` - it clicks buttons and reads back
-`st.session_state`, no browser required. Screenshots come from `shot.py`
-(Playwright + Chromium against a live server).
+AlphaOS is one Streamlit app (root `app.py`) over four tools that share an active
+ticker: **Overview**, **Valuation** (DCF + comparables), **News Sentiment**,
+**Strategy Backtester** and **Trading Simulator**. Valuation and the simulator are
+the surfaces' own `app.py` files running embedded; sentiment and the backtester
+are platform pages over SentimentFinance and AlgoBacktester. Every surface still
+runs standalone too.
 
-All paths below are relative to the platform root (`AlphaLens/`). Verified on
-macOS 25.5 (arm64), Python 3.14.6.
+Drive it headlessly with `.claude/skills/run-alphalens/driver.py`: it runs the real
+app scripts through `streamlit.testing.v1.AppTest`, clicking buttons and reading
+back `st.session_state`, with no browser. Use `shot.py` (Playwright + Chromium
+against a live server) for screenshots and for the checks AppTest can't do: the
+timer-driven replay, the handoff navigation and the ticker picker.
+
+Paths are relative to the platform root (`AlphaLens/`). Verified on macOS 25.5
+(arm64), Python 3.14.6, streamlit 1.63 and 1.64.
 
 ## Prerequisites
 
-No system packages needed. One shared venv serves all three surfaces - the two
-Streamlit apps' requirements are compatible, and the sentiment CLI needs nothing.
+No system packages. One shared venv serves the platform and every surface:
 
 ```bash
 python3 -m venv .venv
 .venv/bin/pip install --upgrade pip
-cat stock_simulator/requirements.txt stock-valuation-dashboard/requirements.txt \
-  | grep -v '^#' | grep -v '^$' | sort -u > /tmp/alphalens-reqs.txt
-.venv/bin/pip install -r /tmp/alphalens-reqs.txt playwright
-```
-
-Chromium is only needed for screenshots (no system Chrome required):
-
-```bash
+.venv/bin/pip install -r requirements.txt playwright
 .venv/bin/playwright install chromium
 ```
 
+Chromium is only for `shot.py`; no system Chrome needed.
+
 ## Run (agent path) - the driver
 
-Everything runs offline against committed fixtures by default, so it works with
-no network and gives byte-identical numbers every time.
+Offline against committed fixtures by default: no network, identical numbers
+every run.
 
 ```bash
 .venv/bin/python .claude/skills/run-alphalens/driver.py all
 ```
 
-That runs all three surfaces, each in its own process, and prints `ALL PASS`.
+Runs each standalone surface, then AlphaOS, each in its own process, and prints
+`ALL PASS`. Warm: ~7s.
 
-**Timing:** the *first* run after a fresh `pip install` is very slow - ~10 min for
-`all`, ~18 min for `shot.py both` - because Streamlit and its ~50 dependencies
-byte-compile on first import, once per subprocess. Warm runs are fast: `all` 11s,
-`sim`/`val` 5s each, `sent`/`engine` 1s, `shot.py both` 22s. Don't kill the first
-run thinking it hung; budget 20 minutes for a cold machine.
+**Timing on a cold machine:** the first run after `pip install` takes ~10 min for
+`all` and up to ~18 min for `shot.py`, because Streamlit and its dependencies
+byte-compile on first import in each subprocess. It has not hung. Warm runs:
+`all` 7s, `platform` 2-3s, `sim`/`val` 5s, `sent`/`bt`/`engine` 1s, `shot.py
+platform` 24s, `shot.py both` 22s.
 
-Individual surfaces:
+### AlphaOS
+
+```bash
+.venv/bin/python .claude/skills/run-alphalens/driver.py platform
+```
+
+One process, one session, asserting as it goes:
+
+1. **Overview**: all five cards render (last close $333.08, 🔴 SELL, BULLISH news,
+   SMA 20/50 +10.1%, RSI 63).
+2. **Valuation**: the page's signal equals the overview card, then the slider
+   flow (SELL at defaults, 🟢 BUY at 35% growth / 7% WACC).
+3. **Backtester**: SMA 20/50 +10.14% matches the overview card; three charts
+   including the sweep heatmap; MACD long-only +25.37% vs long/short -2.51%;
+   sample-CSV source.
+4. **Handoff**: clicks "Replay … in the Trading Simulator"; the simulator arrives
+   with 500 candles loaded and the strategy selected.
+5. **Simulator**: BUY → step 3 → SELL (+44.28) → SELL flips short; 300-candle
+   auto replay.
+6. **News sentiment**: ad hoc headline -0.245 Bearish; mock AAPL news BULLISH
+   +0.235 (identical to the CLI's AAPL score); sample feed with 5 tickers, BA
+   BEARISH.
+7. **Shared ticker**: picker → MSFT; valuation follows; the simulator keeps its
+   AAPL session and warns `Showing AAPL. Fetch Data to load MSFT.`
+
+Live data, any symbol (`--live` goes **before** the subcommand):
+
+```bash
+.venv/bin/python .claude/skills/run-alphalens/driver.py --live --ticker MSFT platform
+```
+
+With fixtures, every symbol returns AAPL data relabelled, so an MSFT valuation
+header reads "Apple Inc. `MSFT`". That's expected offline.
+
+### Surfaces standalone
 
 ```bash
 .venv/bin/python .claude/skills/run-alphalens/driver.py sim
 .venv/bin/python .claude/skills/run-alphalens/driver.py val
 .venv/bin/python .claude/skills/run-alphalens/driver.py sent
+.venv/bin/python .claude/skills/run-alphalens/driver.py bt
 ```
 
-`sim` boots the app, clicks **Fetch Data**, then exercises the signed-holdings
-model end to end - BUY opens a long, `⏭+1` steps three candles, SELL closes it
-for a realized P&L, a second SELL flips to short - then replays 300 candles on a
-strategy and prints performance metrics. Options:
+- `sim` drives the signed-holdings model end to end, then an auto-strategy replay
+  with performance metrics.
+- `val` asserts the verdict moves with the sliders.
+- `sent` runs the CLI (text, feed, `--json`) plus its unit tests.
+- `bt` runs AlgoBacktester's CLI, asserts AlphaOS's strategy lab reproduces it to
+  the cent ($10,611.57, 8 trades), then backtests the simulator's strategies on
+  the sample CSV.
 
 ```bash
-.venv/bin/python .claude/skills/run-alphalens/driver.py sim \
-  --strategy "MACD Strategy" --candles 400
-```
-
-Valid strategies: `Manual Trading`, `RSI Strategy`, `MACD Strategy`,
-`MA Crossover`, `FVG Strategy`, `Liquidity Sweep`.
-
-`val` renders the dashboard, reads the verdict, then moves the sidebar
-assumptions and asserts the verdict actually moves (at 10%/10% AAPL reads
-🔴 SELL; at 35% growth / 7% WACC it flips 🟢 BUY):
-
-```bash
+.venv/bin/python .claude/skills/run-alphalens/driver.py sim --strategy "MACD Strategy" --candles 400
 .venv/bin/python .claude/skills/run-alphalens/driver.py val --growth 20 --wacc 8
 ```
 
-Live market data instead of fixtures (global flag, goes **before** the
-subcommand):
-
-```bash
-.venv/bin/python .claude/skills/run-alphalens/driver.py --live --ticker MSFT sim --candles 100
-```
+Strategies: `Manual Trading`, `RSI Strategy`, `MACD Strategy`, `MA Crossover`,
+`FVG Strategy`, `Liquidity Sweep`.
 
 ### Direct invocation (no Streamlit)
 
-Most PRs touch `modules/` internals, not the UI. This path skips Streamlit
-entirely and is by far the fastest check:
+For PRs touching simulator internals:
 
 ```bash
 .venv/bin/python .claude/skills/run-alphalens/driver.py engine
 ```
 
-It loads the fixture, computes indicators and SMC zones, prints the signal
-distribution for all six strategies, and runs a long→flat→short flip through
-`TradingEngine`.
+For the backtester and strategy lab, import `shell.strategy_lab`. It has no
+Streamlit dependency:
+
+```bash
+.venv/bin/python -c "
+from shell import strategy_lab as lab
+r = lab.run(lab.load_sample(), 'RSI Strategy', allow_short=True)
+print(r.result.strategy, f'{r.result.total_return:+.2%}', r.result.trades)"
+```
 
 ## Screenshots
 
 ```bash
-.venv/bin/python .claude/skills/run-alphalens/shot.py both
+.venv/bin/python .claude/skills/run-alphalens/shot.py platform
 ```
 
-Writes PNGs to `.claude/skills/run-alphalens/shots/`:
-`sim-landing.png`, `sim-loaded.png`, `sim-stepped.png` (the driver clicks Fetch
-Data and steps the replay), `val-dashboard.png`, `val-fullpage.png`.
-`shot.py` picks a free port itself, so it never collides with a server you left
-running. **Open the PNG and look at it** - a blank page still writes a file.
-Expect ~22s warm (much longer on the first run after install, see Timing above).
-`sim-loaded.png` should show the candlestick chart with the green
-"Loaded 500 candles for AAPL · 161 FVGs · 59 Sweeps detected" banner;
-`sim-stepped.png` should show the slider at 53 and the header badge at
-`29 Nov 2024 · 54 / 500`, proving the replay actually advanced.
+Walks AlphaOS in Chromium with the offline server:
+overview → valuation → news sentiment → backtester → the handoff button → play and
+pause the replay → away and back → type MSFT into the ticker picker.
+
+It writes `alphaos-overview.png`, `alphaos-valuation.png`,
+`alphaos-sentiment.png`, `alphaos-backtester.png`,
+`alphaos-simulator-playing.png` and `alphaos-simulator.png` to
+`.claude/skills/run-alphalens/shots/`.
+
+It also asserts and prints:
+- `handoff landed on simulator with data loaded`
+- `candle 51 -> 67 after ~4s of play`
+- the candle unchanged after leaving and returning
+- `valuation follows the picker: 'Valuing MSFT'`
+
+**Open the PNGs and look at them.** A broken page still writes a file.
+
+Standalone apps: `shot.py both` writes `sim-landing.png`, `sim-loaded.png`,
+`sim-stepped.png`, `val-dashboard.png`, `val-fullpage.png`.
 
 ## Run (human path)
 
+From the root, so `.streamlit/config.toml` applies (dark theme, no Deploy button):
+
 ```bash
-.venv/bin/python .claude/skills/run-alphalens/serve.py sim --port 8501
-.venv/bin/python .claude/skills/run-alphalens/serve.py val --port 8502
+.venv/bin/streamlit run app.py
 ```
 
-`serve.py` is a real Streamlit server with the fixture pre-wired, so the page
-renders loaded data with no network. Add `--live` for real Yahoo data. Ctrl-C to
-stop. Plain `streamlit run app.py` from inside either app directory also works,
-but it fetches live on load and both apps default to the same port.
+Live Yahoo data on http://localhost:8501. On a machine that has never run
+Streamlit, the terminal first asks for an email address; press Enter. **From a
+script or background job that prompt blocks forever**, so agents add
+`--server.headless true`:
+
+```bash
+.venv/bin/streamlit run app.py --server.headless true
+```
+
+Offline, with price, fundamentals and news fixtures:
+
+```bash
+.venv/bin/python .claude/skills/run-alphalens/serve.py platform --port 8501
+```
+
+The standalone surfaces:
+
+```bash
+.venv/bin/python .claude/skills/run-alphalens/serve.py sim --port 8502
+.venv/bin/python .claude/skills/run-alphalens/serve.py val --port 8503
+cd AlgoBacktester && python3 backtester.py data/SAMPLE.csv --fast 20 --slow 50
+```
+
+`serve.py` takes `--live` for real data. Ctrl-C stops a server.
 
 ## Test
 
 ```bash
-cd SentimentFinance && python3 -m unittest discover -s tests -t .   # 23 tests
+cd SentimentFinance && python3 -m unittest discover -s tests -t .
 ```
 
-That is the **only** test suite in the platform. Neither Streamlit app has one -
-`driver.py sim` / `val` are the regression check for those, and they assert, not
-just print.
-
-Single test:
-
-```bash
-cd SentimentFinance && python3 -m unittest tests.test_sentiment -v
-```
+That's the only unit-test suite (23 tests, SentimentFinance). Everything else is
+covered by the driver, which asserts rather than prints.
 
 ## Gotchas
 
-- **Both Streamlit apps ship a top-level package named `modules`.** Put both on
-  `sys.path` in one process and whichever is first wins; the other's imports die
-  with a baffling `ModuleNotFoundError: No module named 'modules.trading_engine'`.
-  This is why `driver.py all` re-execs itself as subprocesses instead of looping
-  in-process, and why `use()` inserts exactly one component path. Never import
-  from both apps in the same interpreter.
-- **`AppTest.session_state` has no `.get()`.** It is a `SafeSessionState` whose
-  `__getattr__` forwards into the state dict, so `ss.get("data_loaded")` raises
-  `AttributeError: get not found in session_state`. Use `ss["key"]` and
-  `"key" in ss`.
-- **The replay loop is `@st.fragment(run_every=0.25)` and AppTest cannot tick
-  it.** `at.run()` will never advance the replay on its own. To simulate replay,
-  advance `session_state["replay_idx"]` yourself and make the same
-  `engine.buy/sell` calls the fragment makes - that is what `cmd_sim` does. The
-  `⏭+1` button *does* work under AppTest; only the timer-driven `▶` does not.
-- **Click buttons by label, never by index.** `at.button[0]` is `🔄 Fetch Data`
-  before data loads and `⏮` after, because loading data reveals the replay
-  controls ahead of the sidebar in render order.
+- **Surface code lives under private aliases inside AlphaOS.** The simulator and
+  valuation apps both ship a top-level `modules` package. `shell/surfaces.py`
+  loads each once as `_alphalens_simulator_modules` /
+  `_alphalens_valuation_modules` and execs the surface `app.py` with a per-script
+  `__import__` that rewrites `modules`.
+  - In platform code, tests and fixture patches, use
+    `surfaces.module(surfaces.SIMULATOR, "data_fetcher")`; `import modules.x`
+    doesn't work there.
+  - Swapping `sys.modules` per page would race, because Streamlit runs each
+    session on its own thread. Verified with two live browser sessions: one
+    replaying while the other rendered valuation and sentiment 13-17 times, three
+    runs, no errors.
+  - Outside AlphaOS, never import both surfaces' `modules` in one interpreter.
+    Whichever is first on `sys.path` wins, and the other fails with
+    `ModuleNotFoundError: No module named 'modules.trading_engine'`. That's why
+    `driver.py all` uses subprocesses.
+- **Embedded surfaces check `ALPHAOS_EMBEDDED`.** `surfaces.run` injects it into the
+  script globals. When set:
+  - Both apps skip `set_page_config`, their own branding and their own ticker
+    picker, and read `st.session_state["alphaos_ticker"]`.
+  - The simulator also consumes `st.session_state["alphaos_sim_request"]` (the
+    backtester handoff) *before* its sidebar widgets render.
+
+  Standalone runs never see the flag.
+- **`alphaos_ticker` is the one shared key.** Only the sidebar picker in `app.py`
+  sets it (`shell/context.py`). The picker initialises it on first render, so
+  it always exists.
+- **The simulator's strategy radio has no key.** Its index comes from
+  `session_state["strategy"]`, so set that and rerun to change strategy. BUY and
+  SELL buttons exist only under Manual Trading, so `cmd_sim` selects it first
+  (a handoff may have chosen another strategy).
+- **Two `$` in Streamlit markdown open a LaTeX span.** A caption like
+  `Fair value $167 · price $333` renders as a garbled math span. Captions and
+  metric deltas that contain currency go through `market.md()`, which escapes
+  `$`. Metric *values* are not markdown.
+- **The overview must match the tools.** Its valuation card uses
+  `market.DEFAULT_VALUATION`, a copy of the valuation page's slider defaults. If
+  those defaults change in `stock-valuation-dashboard/app.py`, update the copy.
+  `driver.py platform` fails if the card and the page disagree.
+- **Currency is inconsistent across tools.** The overview picks ₹ for `.NS`/`.BO`
+  symbols and `$` otherwise. The embedded valuation page hardcodes `$`, and the
+  simulator hardcodes `₹` for every ticker. RELIANCE.NS shows ₹1,248 on the
+  overview and $1,248.00 on Valuation.
+- **Yahoo's news feed for a ticker includes broader market stories.** A live AAPL
+  run returned a Walmart article. The sentiment page says so.
+- **`AppTest.switch_page` only accepts file-backed pages**, which is why pages
+  are thin scripts in `views/`. Pass `views/simulator.py`, not the url path.
+  Segmented controls appear as `at.button_group(key=...)`.
+- **Material icons are part of nav link names**
+  (`candlestick_chart Trading Simulator`). In Playwright, select
+  `[data-testid="stSidebarNavLink"][href$="/simulator"]`. Navigate by clicking;
+  loading a URL starts a fresh session.
+- **During ▶ replay only the chart redraws.** The `· 51 / 500` header badge
+  updates on the rerun that ⏸ triggers, so read the position after pausing.
+  Click ▶ only once the page has settled, and wait for ⏸ to appear, or the click
+  can be lost. An early concurrency test failed exactly this way.
+- **The simulator's CSS hides every `<header>`**, including the nav section
+  labels. `app.py` injects an override for `stNavSectionHeader`.
+- **`AppTest.session_state` has no `.get()`.** Use `ss["key"]` / `"key" in ss`.
+- **AppTest cannot tick `@st.fragment(run_every=0.25)`.** `cmd_sim` advances
+  `replay_idx` and makes the fragment's engine calls itself. `⏭+1` works under
+  AppTest; `▶` doesn't.
+- **Click buttons by label, not index.** Indexes shift when the replay controls
+  appear.
 - **`calculate_performance_metrics` takes `(trade_history, portfolio_history,
-  initial_capital)`, not the engine.** Passing the engine fails late with
-  `TypeError: 'TradingEngine' object is not iterable`.
-- **The valuation app fetches on import.** `should_run = run_btn or
-  (stock_data is None)`, so the very first `at.run()` hits Yahoo before you can
-  click anything. Patch `modules.data_fetcher.fetch_stock_data` *before*
-  `AppTest.from_file(...).run()`.
-- **Raw `curl` to Yahoo Finance returns HTTP 429, but yfinance works.** yfinance
-  ships `curl_cffi` browser impersonation. Do not conclude the network is down
-  from a failing `curl` - test with `yfinance` itself.
-- **`requirements.txt` only sets floors, so a fresh install today resolves to
-  pandas 3.0.5 / numpy 2.5.3 / streamlit 1.63 / plotly 7.0** - far newer than
-  what the code was written against. It all still works, but
-  `stock-valuation-dashboard/app.py` calls `use_container_width=`, which
-  Streamlit says is removed after 2025-12-31; it currently only warns, loudly and
-  repeatedly. `stock_simulator` already migrated to `width="stretch"`. Pin the
-  requirements or migrate the valuation app before this becomes a hard break.
-- **Both apps default to port 8501.** Streamlit does not fall back to another
-  port - it prints `Port 8501 is not available` and exits. A server you
-  backgrounded earlier will silently break the next launch:
-  `lsof -ti:8501 | xargs kill -9`.
-- **macOS has no `timeout(1)`.** Don't wrap these commands in it; it's GNU
-  coreutils (`brew install coreutils` gives `gtimeout`).
-- **Streamlit paints over a websocket**, so the DOM is empty for a beat after
-  `goto`. Wait for real content - `.js-plotly-plot` for a chart,
-  `[data-testid="stMetric"]` for the valuation metrics - not a fixed sleep.
-- **`AlphaLens/` itself is not a git repo**; the three surfaces are three
-  separate repos with their own remotes. This skill and its fixtures are
-  therefore untracked by anything. Also note `stock_simulator/.gitignore`
-  ignores `.claude`, so the skill deliberately lives at the platform root
-  instead. Run git commands with `-C <surface>`.
-- The sentiment CLI needs **no venv** - it is stdlib only and runs on system
-  `python3`. `driver.py sent` invokes it with `sys.executable` from the venv,
-  which works too.
+  initial_capital)`**, not the engine.
+- **The valuation app fetches on first run.** Patch its fetcher *before*
+  `AppTest.from_file(...).run()`. `shell.market.news` looks up `fetch_news` at
+  call time so it can be patched.
+- **Raw `curl` to Yahoo gets HTTP 429, but yfinance works** (it uses
+  `curl_cffi` impersonation). Test the network with yfinance.
+- **Requirement floors resolve to much newer versions** (pandas 3.0, streamlit
+  1.63/1.64, plotly 7.x). It works. The valuation app's `use_container_width=`
+  warns repeatedly; that's noise, not failure.
+- **Port behaviour depends on whether you set it.** Plain `streamlit run app.py`
+  quietly moves to the next free port (8502, ...) when 8501 is taken, so a
+  forgotten server makes the URL change. With an explicit `--server.port` (as
+  `serve.py` passes) Streamlit exits with `Port 8501 is not available` instead.
+  Find the old server with `lsof -nP -iTCP:8501 -sTCP:LISTEN` and stop it.
+  `shot.py` picks free ports itself.
+- **macOS has no `timeout(1)`.**
+- **Git layout.** The root is its own repo (github.com/akshat12kapoor-rgb/AlphaLens)
+  tracking the platform files. Each of the four surfaces is a separate repo,
+  excluded by the root `.gitignore` so they aren't recorded as gitlinks. Commit
+  surface changes with `git -C <surface>`.
 
 ## Fixtures
 
-`fixtures/AAPL_1d.csv` - 500 real daily AAPL candles (2024-09-16 → 2026-09-14),
-captured from Yahoo. `fixtures/AAPL_fundamentals.json` - a real
-`fetch_stock_data("AAPL")` result, with pandas Series stored as
-`{"__series__": {...}}` and rehydrated on load.
+- `fixtures/AAPL_1d.csv`: 500 real daily AAPL candles (2024-09-16 → 2026-09-14).
+- `fixtures/AAPL_fundamentals.json`: a real `fetch_stock_data("AAPL")` result,
+  with Series stored as `{"__series__": {...}}`.
+- `fixtures/AAPL_news.json`: **mock** stories built from the AAPL lines of
+  `SentimentFinance/data/headlines.txt`, in `shell.market.fetch_news`'s shape.
+  Real headlines aren't committed.
 
-Refresh them when you want newer data:
-
-```bash
-cd stock_simulator && PYTHONPATH=. ../.venv/bin/python -c "
-from modules.data_fetcher import fetch_data
-fetch_data('AAPL','2y','1d').to_csv('../.claude/skills/run-alphalens/fixtures/AAPL_1d.csv')"
-```
+The numbers quoted in this skill depend on these snapshots. Recapturing them
+changes the numbers.
 
 ## Troubleshooting
 
 | Symptom | Fix |
 |---|---|
-| `ModuleNotFoundError: No module named 'modules.trading_engine'` | You imported both apps in one process. Run one surface per process. |
-| `AttributeError: get not found in session_state` | `AppTest` state has no `.get()`; use `ss["key"]`. |
-| `TypeError: 'TradingEngine' object is not iterable` | `calculate_performance_metrics` wants `trade_history`, not the engine. |
-| `Port 8501 is not available` then the server exits | `lsof -ti:8501 \| xargs kill -9`, or pass `--port`. |
-| `driver.py` exits 1 with `data_loaded False` | Live fetch failed (bad ticker or Yahoo throttling). Drop `--live` to use fixtures. |
-| Screenshot is blank / all dark | You didn't wait for the websocket paint. `shot.py` waits on `.js-plotly-plot`; keep that. |
+| `ModuleNotFoundError: No module named 'modules.trading_engine'` | Both surfaces' `modules` in one interpreter. Standalone: one per process. AlphaOS: `shell.surfaces.module(...)`. |
+| Overview card text garbled, `$` amounts missing | Unescaped `$` pair in markdown. Wrap with `market.md()`. |
+| `KeyError: st.session_state has no key "alphaos_ticker"` in a test | The picker initialises it on first render; run `app.py` once before reading it. |
+| `button 'BUY' not found` after a handoff | The handoff selected an auto strategy; set `session_state["strategy"] = "Manual Trading"` and rerun. |
+| `ValueError: Could not find page 'simulator' relative to the main script` | `AppTest.switch_page("views/simulator.py")`. |
+| Playwright times out on `get_by_role("link", name="Trading Simulator")` | Select `stSidebarNavLink` by `href`. |
+| Replay "doesn't advance" in a browser test | ▶ was clicked mid-rerun. Wait for the ⏸ button before measuring. |
+| `AttributeError: get not found in session_state` | Use `ss["key"]`. |
+| `TypeError: 'TradingEngine' object is not iterable` | `calculate_performance_metrics(engine.trade_history, ...)`. |
+| `Port 8501 is not available`, server exits | `lsof -ti:8501 \| xargs kill -9`, or `--port`. |
+| App opens on :8502 instead of :8501 | An earlier server still holds 8501; stop it or use the printed URL. |
+| Background `streamlit run app.py` never healthy | First-run email prompt. Add `--server.headless true`. |
+| Valuation shows "Insufficient cash-flow data" | Expected for crypto/ETFs (e.g. BTC-USD). The other tools still work. |
 | `playwright._impl._errors.Error: Executable doesn't exist` | `.venv/bin/playwright install chromium` |
-| Repeated `use_container_width will be removed` warnings | Expected from the valuation app. Noise, not failure. |

@@ -1,0 +1,53 @@
+{
+  "_note": "Mock stories built from SentimentFinance/data/headlines.txt (AAPL lines); not real news. Shape matches shell.market.fetch_news.",
+  "stories": [
+    {
+      "title": "Apple beats quarterly earnings expectations as services revenue surges to record high",
+      "publisher": "Sample wire",
+      "published": "2024-03-01T13:00:00+00:00",
+      "url": ""
+    },
+    {
+      "title": "Analysts upgrade Apple to strong buy citing robust iPhone demand",
+      "publisher": "Sample wire",
+      "published": "2024-03-01T14:00:00+00:00",
+      "url": ""
+    },
+    {
+      "title": "Apple faces antitrust lawsuit over App Store practices, shares slip",
+      "publisher": "Sample wire",
+      "published": "2024-03-02T15:00:00+00:00",
+      "url": ""
+    },
+    {
+      "title": "Apple announces $110 billion buyback, largest in company history",
+      "publisher": "Sample wire",
+      "published": "2024-03-04T16:00:00+00:00",
+      "url": ""
+    },
+    {
+      "title": "Supply chain concerns weigh on Apple as component costs rise",
+      "publisher": "Sample wire",
+      "published": "2024-03-05T17:00:00+00:00",
+      "url": ""
+    },
+    {
+      "title": "Apple unveils new AI features, investors optimistic about growth outlook",
+      "publisher": "Sample wire",
+      "published": "2024-03-06T13:00:00+00:00",
+      "url": ""
+    },
+    {
+      "title": "Apple shares tumble after weak guidance disappoints Wall Street",
+      "publisher": "Sample wire",
+      "published": "2024-03-07T14:00:00+00:00",
+      "url": ""
+    },
+    {
+      "title": "Apple gains market share in emerging markets, revenue growth accelerates",
+      "publisher": "Sample wire",
+      "published": "2024-03-08T15:00:00+00:00",
+      "url": ""
+    }
+  ]
+}

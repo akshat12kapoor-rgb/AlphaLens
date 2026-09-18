@@ -1,0 +1,14 @@
+# Applies when the combined app is launched from the AlphaLens root.
+[theme]
+base = "dark"
+primaryColor = "#FF4B4B"
+backgroundColor = "#0E1117"
+secondaryBackgroundColor = "#12161E"
+textColor = "#E6E9EF"
+
+[browser]
+gatherUsageStats = false
+
+[client]
+# Hide Streamlit's Deploy button; this is a local app.
+toolbarMode = "minimal"

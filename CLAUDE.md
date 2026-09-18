@@ -4,52 +4,117 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Platform shape
 
-AlphaLens is **one platform with three surfaces**, not three products. They share
-a theme (retail-investor tooling on yfinance + Streamlit) and a convention: a
-`modules/` package of pure, Streamlit-free functions behind a single `app.py`.
+**AlphaOS** is a financial analysis and trading simulation platform: one Streamlit
+app (root `app.py`) over four tools that share an active ticker. The folder and
+root GitHub repo are still named AlphaLens.
 
-| Directory | Surface | What it does |
+| Page | Built from | What it does |
 |---|---|---|
-| `stock_simulator/` | Simulator (`TradingSimTALP`) | Candle-by-candle replay + paper trading |
-| `stock-valuation-dashboard/` | Valuation | DCF + comparable-multiples dashboard |
-| `SentimentFinance/` | Sentiment | Stdlib CLI scoring financial headlines |
+| Overview | `shell/home.py` | The active ticker through every tool at once |
+| Valuation | `stock-valuation-dashboard/app.py` (embedded) | DCF + comparable multiples → BUY/HOLD/SELL |
+| News Sentiment | `shell/sentiment_page.py` over `SentimentFinance/` | Lexicon scoring of live Yahoo headlines, sample or uploaded feeds |
+| Strategy Backtester | `shell/backtest_page.py` over `AlgoBacktester/` | Backtest SMA crossover and every simulator strategy, sweep parameters |
+| Trading Simulator | `stock_simulator/app.py` (embedded, repo `TradingSimTALP`) | Candle-by-candle replay + paper trading |
 
-Two mechanical facts that follow from how it's laid out:
+- **Every surface still runs standalone.**
+- **Each of the four surface directories is its own git repo** with its own
+  remote.
+- **The root repo tracks only platform files** (`app.py`, `shell/`, `views/`,
+  `.streamlit/`, `requirements.txt`, `CLAUDE.md`, `.claude/`). Its `.gitignore`
+  excludes all four surface directories on purpose: `git add` on a directory that
+  contains a `.git` records a gitlink (mode 160000), not the contents.
+- A feature often spans repos: platform code in the root plus an
+  `ALPHAOS_EMBEDDED` branch in a surface. Commit each with `git -C <dir>`.
 
-- **Each surface is its own git repo with its own remote**, and the root is a
-  fourth repo that tracks only platform-level files (`CLAUDE.md`, `.claude/`).
-  Run git with `-C <surface>` for surface changes, and expect them to land in
-  that surface's history, not a platform-wide commit. The root `.gitignore`
-  excludes all three surface directories on purpose: `git add` on a directory
-  containing a `.git` records a **gitlink** (mode 160000), a broken submodule
-  pointer whose contents are not tracked. If you ever want them genuinely linked,
-  register them as real submodules (`git submodule add <remote> <dir>` after
-  un-ignoring) rather than letting them be added accidentally.
-- **`stock_simulator/` and `stock-valuation-dashboard/` both ship a top-level
-  package named `modules`.** Only one can be imported per Python process —
-  whichever is first on `sys.path` wins, and the other's imports fail with a
-  misleading `ModuleNotFoundError: No module named 'modules.trading_engine'`.
-  Never import from both in one interpreter; run one surface per process.
+## AlphaOS architecture
+
+```
+app.py                  st.navigation over views/*.py; sidebar ticker picker; CSS override
+shell/context.py        the active ticker (session_state["alphaos_ticker"]) + picker
+shell/market.py         cached price history / fundamentals / news, default valuation, md()
+shell/strategy_lab.py   AlgoBacktester engine x simulator signals; no Streamlit
+shell/surfaces.py       loads and execs the embedded surfaces
+views/*.py              one-line page scripts calling the above
+```
+
+- **The simulator and valuation apps both ship a top-level package named
+  `modules`**, so they can't share `sys.modules`. `shell/surfaces.py` loads each
+  package once under a private alias (`_alphalens_simulator_modules`, ...). It
+  then execs the surface's `app.py` with a per-script `__import__` that rewrites
+  `modules` to that alias. It deliberately doesn't swap `sys.modules` per page:
+  Streamlit runs each browser session on its own thread, so swapping would race.
+  - In platform code, reach surface code via
+    `surfaces.module(surfaces.SIMULATOR, "trading_engine")`, never
+    `import modules.x`.
+  - Surface packages must keep not importing each other as `modules.<x>`.
+  - Outside AlphaOS, never import both surfaces' `modules` in one interpreter.
+    Whichever is first on `sys.path` wins, and the other fails with
+    `ModuleNotFoundError: No module named 'modules.trading_engine'`.
+  - SentimentFinance and AlgoBacktester are flat stdlib modules with no clash;
+    `use_sentiment()` / `use_backtester()` put them on `sys.path`.
+- **Embedded mode.** `surfaces.run` injects `ALPHAOS_EMBEDDED = True` into the
+  script globals. The simulator and valuation apps check
+  `globals().get("ALPHAOS_EMBEDDED", False)`, and when it's set they:
+  - skip `set_page_config`, their own branding and their own ticker picker;
+  - read `st.session_state["alphaos_ticker"]` instead.
+
+  Keep new platform-driven behaviour behind that flag, so standalone runs don't
+  change.
+- **Cross-tool handoff.** The backtester writes
+  `st.session_state["alphaos_sim_request"]` (`ticker`, `strategy`, `interval`,
+  `period`) and calls `st.switch_page`. The simulator consumes the request
+  before its sidebar widgets render, then loads data with the strategy selected.
+- **One source of numbers.**
+  - Platform pages fetch through the surfaces' own fetchers (via
+    `shell.market`), so every tool sees the same data and a fixture patched into
+    a fetcher applies everywhere.
+  - The overview's valuation card uses `market.DEFAULT_VALUATION`, a copy of the
+    valuation page's slider defaults. Change both together; `driver.py platform`
+    asserts they match.
+  - The sentiment page calls the same functions as `SentimentFinance/analyze.py`.
+- **Backtest semantics.** `strategy_lab.SignalStrategy` holds the direction of
+  the latest simulator BUY/SELL signal. The AlgoBacktester engine trades a
+  bar-*i* position over the *i* → *i*+1 return, fully invested. None of the
+  simulator's signals look ahead:
+  - RSI, MACD and MA use the current and previous bar.
+  - Sweeps compare against the prior 20 bars.
+  - An FVG fires only once its third candle closes.
+
+  Keep that true for new strategies. Backtests are daily bars only, since the
+  engine annualises with 252.
+- **Streamlit markdown treats a pair of `$` as LaTeX.** Pass captions and metric
+  deltas that contain currency through `market.md()`.
+- **Known gap: currency.** The overview uses ₹ for `.NS`/`.BO` symbols, but the
+  valuation app hardcodes `$` and the simulator hardcodes `₹` for every ticker.
+- Surface `app.py` edits apply on the next rerun (`surfaces._code` recompiles on
+  mtime change). Edits inside a surface's `modules/` need a server restart.
+- Pages are files in `views/`, not callables, because `AppTest.switch_page` can
+  only select file-backed pages.
+- Session-state keys must stay distinct across tools. The platform uses the
+  `alphaos_` prefix; the backtester and sentiment pages use `bt_` and
+  `sentiment_`.
+- `.streamlit/config.toml` (dark theme, minimal toolbar) applies only when
+  Streamlit is launched from the root.
 
 ## Running it
 
-There is a run skill at `.claude/skills/run-alphalens/` — **start there**, it is
-verified end-to-end and drives all three surfaces headlessly against committed
-offline fixtures:
+Start with the run skill at `.claude/skills/run-alphalens/`. It's verified end to
+end and drives AlphaOS and each surface headlessly against committed offline
+fixtures:
 
 ```bash
 .venv/bin/python .claude/skills/run-alphalens/driver.py all
 ```
 
-One shared venv at the root serves the whole platform (the two Streamlit apps'
-requirements are compatible; the sentiment CLI is stdlib-only). See the skill for
-setup, screenshots (`shot.py`), live-server mode (`serve.py`), and gotchas.
-
-For quick module-level work without Streamlit:
+Launch AlphaOS (live Yahoo data) from the root:
 
 ```bash
-.venv/bin/python .claude/skills/run-alphalens/driver.py engine
+.venv/bin/streamlit run app.py
 ```
+
+One shared root venv serves everything (`pip install -r requirements.txt`). The
+skill covers setup, the offline server (`serve.py platform`), screenshots
+(`shot.py platform`) and gotchas.
 
 ## Commands
 
@@ -67,9 +132,15 @@ cd SentimentFinance && python3 -m unittest discover -s tests -t .
 
 Run a single test: `python3 -m unittest tests.test_sentiment.TestScoreText.test_negation -v`
 
-The two Streamlit surfaces have **no test suite and no linter config** — the run
-skill's `driver.py sim` / `driver.py val` are their regression check, and they
-assert rather than just print. Verify `modules/` changes by importing them
+The backtester CLI is stdlib-only too:
+
+```bash
+cd AlgoBacktester && python3 backtester.py data/SAMPLE.csv --fast 20 --slow 50
+```
+
+Only SentimentFinance has unit tests, and nothing has a linter config. The run
+skill's `driver.py sim` / `val` / `bt` / `platform` commands are the regression
+check for the rest; they assert rather than just print. Verify `modules/` changes by importing them
 directly, which works because those modules are deliberately Streamlit-free.
 
 `requirements.txt` files set only floors, so a fresh install today resolves to
@@ -165,6 +236,21 @@ Standard library only, by design — adding a dependency changes the project's p
 - Feed format is `date | TICKER | headline`; blank lines and `#` comments skipped,
   malformed lines raise with a line number. `data/headlines.txt` is mock data.
 
+## AlgoBacktester — architecture
+
+`data_loader.py` (CSV → `PriceSeries` of `Bar`s) → `strategies/` (`Strategy`
+subclasses return one target position per bar in [-1, 1]) → `backtester.py`
+(`run_backtest` → `BacktestResult` with CAGR, Sharpe, drawdown, win rate,
+exposure). Stdlib only.
+
+- The engine holds `positions[i]` over the return from bar *i* to *i*+1, and charges
+  `commission` on turnover. A strategy may only use bars up to and including *i*.
+- `load_csv` sorts by date and rejects duplicates. `PriceSeries` built directly
+  (as AlphaOS does from Yahoo data) skips that check, so `strategy_lab` rejects
+  intraday data itself.
+- `MovingAverageCrossover.name` is an instance attribute (`sma_20_50`);
+  `strategy_lab` overrides it with a readable name for display.
+
 ## Conventions
 
 - Python 3.10+ syntax (`X | None`, `from __future__ import annotations`), full type
@@ -173,7 +259,10 @@ Standard library only, by design — adding a dependency changes the project's p
   taking/returning dicts, DataFrames, and dataclasses. All `st.*` calls live in
   `app.py`. This is what makes the models testable from a REPL.
 - Private helpers are `_`-prefixed and grouped under `# ── section ──` comment rules.
-- Both dashboards are finance-grade dark themes; Plotly figure construction belongs
-  in `charts.py` / `chart_renderer.py`, never inline in `app.py`.
+- Surface dashboards keep Plotly figure construction in `charts.py` /
+  `chart_renderer.py`, not inline in `app.py`. Platform pages build their figures
+  in the page module.
+- AlphaOS is dark-themed throughout; charts use `template="plotly_dark"` with
+  transparent backgrounds.
 - These are educational/paper-trading tools. Keep the disclaimers — nothing here
   should be framed as investment advice.

@@ -16,3 +16,10 @@ __pycache__/
 /stock_simulator/
 /stock-valuation-dashboard/
 /SentimentFinance/
+
+# Fourth surface: its own repo, same gitlink reasoning as above.
+/AlgoBacktester/
+
+# Symlinks Streamlit creates into .venv (dangle without a local venv)
+.agents/
+.claude/skills/developing-with-streamlit
