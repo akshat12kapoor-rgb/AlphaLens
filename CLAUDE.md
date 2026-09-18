@@ -4,10 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-**AlphaLens** is one repository containing **AlphaOS**, a financial analysis and
-trading simulation platform: a Streamlit app over four tools that share one
-active ticker — valuation, news sentiment, strategy backtesting and a trading
-simulator.
+**AlphaLens** is a financial analysis and trading simulation platform: one
+Streamlit app over four tools that share an active ticker — valuation, news
+sentiment, strategy backtesting and a trading simulator.
 
 It began as four separate repositories (TradingSimTALP, stock-valuation-dashboard,
 SentimentFinance, AlgoBacktester) that were merged into a single package. Those
@@ -79,7 +78,7 @@ Dependencies run one way: `ui` → `charts` → domain packages (`signals`,
 - **Two `$` in markdown open a LaTeX span.** Captions, markdown and metric deltas
   containing money go through `ui/layout.markdown_safe()`. Metric *values* are not
   markdown and need no escaping.
-- **Session state keys** are namespaced: `alphaos_` for the platform, `sim_` and
+- **Session state keys** are namespaced: `alphalens_` for the platform, `sim_` and
   `bt_` for page widgets, and the whole replay lives in one `Session` dataclass
   under `"simulator"`.
 - **`st.switch_page` does not move AppTest**, only a browser; tests navigate

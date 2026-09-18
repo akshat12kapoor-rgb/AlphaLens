@@ -1,9 +1,9 @@
 ---
 name: run-alphalens
-description: Build, run, test and drive AlphaOS - the financial analysis and trading simulation platform in the AlphaLens repo (app.py plus the alphalens package). Use when asked to run, start, build, test, screenshot or interact with AlphaOS, AlphaLens, the overview, valuation, news sentiment, backtester or trading simulator, or to run the sentiment or backtest CLIs.
+description: Build, run, test and drive AlphaLens - a financial analysis and trading simulation platform (app.py plus the alphalens package). Use when asked to run, start, build, test, screenshot or interact with AlphaLens, the overview, valuation, news sentiment, the backtester or the trading simulator, or to run the sentiment or backtest command lines.
 ---
 
-AlphaOS is one Streamlit app (`app.py`) over four tools that share an active
+AlphaLens is one Streamlit app (`app.py`) over four tools that share an active
 ticker: **Overview**, **Valuation**, **News Sentiment**, **Strategy Backtester**
 and **Trading Simulator**. All the logic lives in the `alphalens` package;
 `views/` holds one thin script per page. Nothing below `alphalens/ui` imports
@@ -91,9 +91,9 @@ valuation header reads "Apple Inc. `MSFT`". That is expected offline.
 ```
 
 Walks the app in Chromium against the offline server and writes
-`alphaos-overview.png`, `alphaos-valuation.png`, `alphaos-sentiment.png`,
-`alphaos-backtester.png`, `alphaos-simulator-playing.png` and
-`alphaos-simulator.png` to `.claude/skills/run-alphalens/shots/` (~30s).
+`alphalens-overview.png`, `alphalens-valuation.png`, `alphalens-sentiment.png`,
+`alphalens-backtester.png`, `alphalens-simulator-playing.png` and
+`alphalens-simulator.png` to `.claude/skills/run-alphalens/shots/` (~30s).
 
 It also asserts what only a browser shows, printing each:
 - `handoff landed on simulator with data loaded`

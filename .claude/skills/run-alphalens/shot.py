@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 """
-Screenshot AlphaOS, and check what AppTest cannot.
+Screenshot AlphaLens, and check what AppTest cannot.
 
     .venv/bin/python .claude/skills/run-alphalens/shot.py
 
@@ -80,25 +80,25 @@ def walk(page) -> list[Path]:
     page.wait_for_selector("text=Valuation signal", timeout=120_000)
     page.wait_for_selector(".js-plotly-plot", timeout=60_000)
     page.wait_for_timeout(1500)
-    snap("alphaos-overview.png")
+    snap("alphalens-overview.png")
 
     navigate(page, "Valuation")
     page.wait_for_selector("text=Sensitivity", timeout=120_000)
     page.wait_for_selector(".js-plotly-plot", timeout=60_000)
     page.wait_for_timeout(2000)
-    snap("alphaos-valuation.png")
+    snap("alphalens-valuation.png")
 
     navigate(page, "News Sentiment")
     page.wait_for_selector("text=in the news", timeout=60_000)
     page.wait_for_selector(".js-plotly-plot", timeout=60_000)
     page.wait_for_timeout(1500)
-    snap("alphaos-sentiment.png")
+    snap("alphalens-sentiment.png")
 
     navigate(page, "Strategy Backtester")
     page.wait_for_selector("text=Total return", timeout=120_000)
     page.wait_for_selector(".js-plotly-plot", timeout=60_000)
     page.wait_for_timeout(2000)
-    snap("alphaos-backtester.png")
+    snap("alphalens-backtester.png")
 
     page.get_by_role("button", name=re.compile("^▶ Replay")).click()
     page.wait_for_selector("text=Loaded", timeout=120_000)
@@ -112,14 +112,14 @@ def walk(page) -> list[Path]:
     page.get_by_role("button", name="▶", exact=True).click()
     page.get_by_role("button", name="⏸", exact=True).wait_for(timeout=30_000)
     page.wait_for_timeout(4000)
-    snap("alphaos-simulator-playing.png")
+    snap("alphalens-simulator-playing.png")
     page.get_by_role("button", name="⏸", exact=True).click()
     page.wait_for_timeout(2000)
     paused = candle(page)
     print(f"[shot] replay fragment in browser: candle {before} -> {paused} after ~4s of play")
     if paused <= before:
         raise AssertionError(f"play did not advance the replay ({before} -> {paused})")
-    snap("alphaos-simulator.png")
+    snap("alphalens-simulator.png")
 
     navigate(page, "News Sentiment")
     page.wait_for_selector("text=in the news", timeout=60_000)

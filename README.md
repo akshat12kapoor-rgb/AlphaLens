@@ -1,7 +1,7 @@
 # AlphaLens
 
-**AlphaOS — the financial analysis and trading simulation platform.** Pick a ticker,
-then work it end to end in one app:
+**A financial analysis and trading simulation platform.** Pick a ticker, then work it
+end to end in one app:
 
 - **Value it.** Discounted cash flow and comparable multiples, blended into a
   BUY / HOLD / SELL call with a margin of safety, plus a sensitivity grid.
@@ -17,7 +17,7 @@ The active ticker follows you across every tool, the overview shows all four
 views of it at once, and a promising backtest replays in the simulator in one
 click. Prices are shown in the instrument's own currency.
 
-![AlphaOS overview](.claude/skills/run-alphalens/shots/alphaos-overview.png)
+![AlphaLens overview](.claude/skills/run-alphalens/shots/alphalens-overview.png)
 
 ## Quick start
 
@@ -95,5 +95,5 @@ engine, valuation, and sentiment scoring.
 - The simulator's shorting is collateralised with cash at 100%, which is simpler
   than a real broker's margin rules.
 
-AlphaOS is for research, learning and simulation. It places no real trades and is
+AlphaLens is for research, learning and simulation. It places no real trades and is
 not financial advice.

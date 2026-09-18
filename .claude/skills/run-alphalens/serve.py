@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 """
-Run AlphaOS as a real server, with the offline fixtures wired in.
+Run AlphaLens as a real server, with the offline fixtures wired in.
 
     .venv/bin/python .claude/skills/run-alphalens/serve.py            # port 8501
     .venv/bin/python .claude/skills/run-alphalens/serve.py --port 8600

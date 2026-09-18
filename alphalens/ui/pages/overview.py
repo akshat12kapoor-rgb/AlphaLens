@@ -171,7 +171,7 @@ def _simulator_card(history) -> None:
 
 def render() -> None:
     symbol = context.ticker()
-    st.title("AlphaOS")
+    st.title("AlphaLens")
     st.markdown("**The financial analysis and trading simulation platform.** Value a company, "
                 "read its news, backtest a strategy on its history, then trade it candle by "
                 "candle in simulation — all on one ticker, in one place.")
@@ -195,5 +195,5 @@ def render() -> None:
         _simulator_card(history)
 
     st.caption("Market data and news from Yahoo Finance, which can be delayed or "
-               "rate-limited. AlphaOS is for research, learning and simulation — it is not "
+               "rate-limited. AlphaLens is for research, learning and simulation — it is not "
                "financial advice and places no real trades.")

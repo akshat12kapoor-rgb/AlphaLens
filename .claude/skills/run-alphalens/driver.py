@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 """
-AlphaOS driver - launches and drives the platform headlessly.
+AlphaLens driver - launches and drives the platform headlessly.
 
 Run from the repo root:
 
@@ -8,7 +8,7 @@ Run from the repo root:
 
 Commands:
     all       tests, CLIs, package and app - each in its own process
-    app       every page of AlphaOS in one session: the shared ticker, the
+    app       every page of AlphaLens in one session: the shared ticker, the
               backtest -> simulator handoff, and state surviving page switches
     cli       the sentiment and backtest command lines
     tests     the pytest suite
@@ -61,7 +61,7 @@ def click(at, label: str):
 # ═════════════════════════════════════════════════════════════════════════
 
 def cmd_app(args) -> None:
-    banner("ALPHAOS  (app.py)")
+    banner("ALPHALENS  (app.py)")
     if args.live:
         print(f"[app] LIVE - Yahoo Finance, ticker {args.ticker}")
     else:
@@ -74,12 +74,12 @@ def cmd_app(args) -> None:
 
     at = AppTest.from_file(str(ROOT / "app.py"), default_timeout=300)
     if args.live:
-        at.session_state["alphaos_ticker"] = args.ticker
+        at.session_state["alphalens_ticker"] = args.ticker
     at.run()
     assert not at.exception, [e.value for e in at.exception]
 
     overview = metrics(at)
-    assert [t.value for t in at.title] == ["AlphaOS"]
+    assert [t.value for t in at.title] == ["AlphaLens"]
     for label in ("Last close", "Valuation signal", "News sentiment",
                   "MA 20/50 return", "RSI (14)"):
         assert label in overview, f"overview card missing {label!r}: {overview}"
@@ -214,7 +214,7 @@ def cmd_app(args) -> None:
         assert (sentiment["Sentiment"], sentiment["Average score"]) == ("BULLISH", "+0.235")
         print("[ok] mock AAPL news scores exactly as the CLI scores AAPL (+0.235)")
 
-    ticker = at.session_state["alphaos_ticker"]
+    ticker = at.session_state["alphalens_ticker"]
     at.button_group(key=f"sentiment_source_{ticker}").set_value("Sample feed").run()
     table = at.dataframe[0].value
     assert len(table) == 5, table
@@ -226,10 +226,10 @@ def cmd_app(args) -> None:
 
     banner("SHARED TICKER")
     loaded = at.session_state["simulator"].symbol
-    target = "MSFT" if at.session_state["alphaos_ticker"] != "MSFT" else "NVDA"
+    target = "MSFT" if at.session_state["alphalens_ticker"] != "MSFT" else "NVDA"
     at.switch_page(PAGES["valuation"]).run()
-    at.sidebar.selectbox(key="alphaos_ticker_picker").set_value(target).run()
-    assert at.session_state["alphaos_ticker"] == target
+    at.sidebar.selectbox(key="alphalens_ticker_picker").set_value(target).run()
+    assert at.session_state["alphalens_ticker"] == target
     assert not at.exception, [e.value for e in at.exception]
     header = [m.value for m in at.markdown if f"`{target}`" in m.value]
     assert header, f"valuation did not follow the picker to {target}"

@@ -74,7 +74,7 @@ def render() -> None:
     except MissingData as exc:
         st.warning(str(exc))
         st.caption("Instruments without published financial statements - crypto and most "
-                   "ETFs - cannot be valued this way. The other AlphaOS tools still work.")
+                   "ETFs - cannot be valued this way. The other AlphaLens tools still work.")
         return
     except ValueError as exc:
         st.error(str(exc))

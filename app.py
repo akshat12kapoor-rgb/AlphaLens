@@ -1,5 +1,5 @@
 """
-AlphaOS - the financial analysis and trading simulation platform.
+AlphaLens - the financial analysis and trading simulation platform.
 
     .venv/bin/streamlit run app.py
 
@@ -18,11 +18,11 @@ import streamlit as st
 
 from alphalens.ui import context
 
-st.set_page_config(page_title="AlphaOS", page_icon="🧭", layout="wide",
+st.set_page_config(page_title="AlphaLens", page_icon="🧭", layout="wide",
                    initial_sidebar_state="expanded")
 
 PAGES = {
-    "AlphaOS": [
+    "AlphaLens": [
         st.Page("views/overview.py", title="Overview", icon=":material/dashboard:",
                 url_path="overview", default=True),
     ],

@@ -16,10 +16,10 @@ from alphalens.core.config import DEFAULT_TICKER
 from alphalens.data import yahoo
 from alphalens.data.models import Fundamentals, Quote
 
-TICKER_KEY = "alphaos_ticker"
-PICKER_KEY = "alphaos_ticker_picker"
+TICKER_KEY = "alphalens_ticker"
+PICKER_KEY = "alphalens_ticker_picker"
 #: Set by the backtester to hand a strategy to the simulator.
-SIM_REQUEST_KEY = "alphaos_sim_request"
+SIM_REQUEST_KEY = "alphalens_sim_request"
 
 POPULAR = [
     "AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "META", "TSLA", "AVGO", "AMD", "NFLX",
@@ -57,7 +57,7 @@ def render_picker() -> str:
     st.selectbox("Active ticker", options, key=PICKER_KEY,
                  on_change=lambda: set_ticker(st.session_state.get(PICKER_KEY) or ""),
                  accept_new_options=True,
-                 help="Every AlphaOS tool works on this ticker. Type any Yahoo Finance "
+                 help="Every AlphaLens tool works on this ticker. Type any Yahoo Finance "
                       "symbol, for example SHOP, RELIANCE.NS or BTC-USD.")
     return ticker()
 
