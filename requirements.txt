@@ -1,6 +1,4 @@
-# Combined AlphaLens app (app.py) - union of the surface requirements.
-# Floors below are what the combined app was verified against; the shell uses
-# st.navigation, container(height="stretch") and width="stretch".
+# AlphaOS. Install with: pip install -r requirements.txt
 streamlit>=1.63.0
 yfinance>=0.2.40
 pandas>=2.0.0

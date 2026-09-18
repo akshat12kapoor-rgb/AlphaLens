@@ -1,40 +1,36 @@
 """
-AlphaOS - financial analysis and trading simulation platform.
+AlphaOS - the financial analysis and trading simulation platform.
 
     .venv/bin/streamlit run app.py
 
 One Streamlit app over four tools that share an active ticker:
 
-    Overview            shell/home.py            the ticker through every tool at once
-    Valuation           stock-valuation-dashboard/app.py (embedded)
-    News Sentiment      shell/sentiment_page.py  over SentimentFinance
-    Strategy Backtester shell/backtest_page.py   over AlgoBacktester + simulator strategies
-    Trading Simulator   stock_simulator/app.py   (embedded)
+    Overview             what every tool says about the ticker right now
+    Valuation            DCF and comparable multiples
+    News Sentiment       lexicon scoring of headlines
+    Strategy Backtester   strategies against history, with parameter sweeps
+    Trading Simulator    candle-by-candle replay and paper trading
 
-The two embedded apps check ALPHAOS_EMBEDDED to defer to the platform; see
-shell/surfaces.py for how their clashing `modules` packages coexist.
+Each page is a thin script in views/ so Streamlit (and AppTest) can address it
+by path; the page code lives in alphalens.ui.pages.
 """
 import streamlit as st
 
-from shell import context
+from alphalens.ui import context
 
-st.set_page_config(
-    page_title="AlphaOS",
-    page_icon="🧭",
-    layout="wide",
-    initial_sidebar_state="expanded",
-)
+st.set_page_config(page_title="AlphaOS", page_icon="🧭", layout="wide",
+                   initial_sidebar_state="expanded")
 
-pages = {
+PAGES = {
     "AlphaOS": [
         st.Page("views/overview.py", title="Overview", icon=":material/dashboard:",
                 url_path="overview", default=True),
     ],
     "Research": [
-        st.Page("views/valuation.py", title="Valuation",
-                icon=":material/calculate:", url_path="valuation"),
-        st.Page("views/sentiment.py", title="News Sentiment",
-                icon=":material/newspaper:", url_path="sentiment"),
+        st.Page("views/valuation.py", title="Valuation", icon=":material/calculate:",
+                url_path="valuation"),
+        st.Page("views/sentiment.py", title="News Sentiment", icon=":material/newspaper:",
+                url_path="sentiment"),
     ],
     "Strategy": [
         st.Page("views/backtester.py", title="Strategy Backtester",
@@ -44,16 +40,10 @@ pages = {
     ],
 }
 
-navigation = st.navigation(pages)
+navigation = st.navigation(PAGES)
 
 with st.sidebar:
     context.render_picker()
     st.divider()
-
-# The simulator's stylesheet hides every <header> element, which also takes out
-# the navigation's section labels while that page is open. Keep them visible.
-st.html("""<style>
-[data-testid="stNavSectionHeader"] { visibility: visible !important; }
-</style>""")
 
 navigation.run()

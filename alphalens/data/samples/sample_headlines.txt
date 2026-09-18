@@ -1,0 +1,42 @@
+# Mock news feed. One headline per line:
+#   YYYY-MM-DD | TICKER | headline text
+# Lines starting with '#' and blank lines are ignored.
+
+2024-03-01 | AAPL | Apple beats quarterly earnings expectations as services revenue surges to record high
+2024-03-01 | AAPL | Analysts upgrade Apple to strong buy citing robust iPhone demand
+2024-03-02 | AAPL | Apple faces antitrust lawsuit over App Store practices, shares slip
+2024-03-04 | AAPL | Apple announces $110 billion buyback, largest in company history
+2024-03-05 | AAPL | Supply chain concerns weigh on Apple as component costs rise
+2024-03-06 | AAPL | Apple unveils new AI features, investors optimistic about growth outlook
+2024-03-07 | AAPL | Apple shares tumble after weak guidance disappoints Wall Street
+2024-03-08 | AAPL | Apple gains market share in emerging markets, revenue growth accelerates
+
+2024-03-01 | TSLA | Tesla deliveries miss estimates, stock plunges in premarket trading
+2024-03-02 | TSLA | Tesla slashes prices again as competition intensifies, margins under pressure
+2024-03-04 | TSLA | Tesla announces breakthrough in battery technology, shares rally
+2024-03-05 | TSLA | Regulators launch probe into Tesla autopilot safety, investors worried
+2024-03-06 | TSLA | Tesla energy storage business posts record profit, exceeds forecasts
+2024-03-07 | TSLA | Tesla downgraded by analysts amid weak demand and rising inventory
+2024-03-08 | TSLA | Tesla expands Gigafactory production, strong outlook for next quarter
+
+2024-03-01 | NVDA | Nvidia earnings smash records as AI chip demand soars past expectations
+2024-03-02 | NVDA | Nvidia stock hits all-time high after bullish guidance
+2024-03-04 | NVDA | Concerns mount over Nvidia valuation as rally looks overextended
+2024-03-05 | NVDA | Nvidia secures major cloud partnership, revenue outlook raised
+2024-03-06 | NVDA | Export restrictions threaten Nvidia China sales, shares decline
+2024-03-07 | NVDA | Nvidia beats on both top and bottom line, announces stock split
+2024-03-08 | NVDA | Competition heats up as rivals unveil rival AI accelerators, Nvidia slips
+
+2024-03-01 | JPM | JPMorgan profit rises on strong trading revenue, tops analyst estimates
+2024-03-02 | JPM | Loan loss provisions increase at JPMorgan amid recession fears
+2024-03-04 | JPM | JPMorgan announces dividend hike, shares climb
+2024-03-05 | JPM | Banking sector selloff drags JPMorgan lower as yields spike
+2024-03-06 | JPM | JPMorgan CEO warns of economic headwinds and persistent inflation
+2024-03-07 | JPM | JPMorgan wealth management arm posts record inflows, growth accelerates
+
+2024-03-01 | BA | Boeing faces new FAA investigation after safety incident, stock falls
+2024-03-02 | BA | Boeing delays 777X delivery again, customers frustrated
+2024-03-04 | BA | Boeing wins $12 billion defense contract, shares rebound
+2024-03-05 | BA | Boeing production halt extends losses, quarterly deficit widens
+2024-03-06 | BA | Boeing cash burn worsens as orders decline sharply
+2024-03-07 | BA | Boeing appoints new CEO, investors hopeful about turnaround

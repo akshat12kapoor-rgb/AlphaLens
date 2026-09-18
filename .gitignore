@@ -1,25 +1,17 @@
 # Python
 __pycache__/
-*.pyc
-.env
-.DS_Store
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
 
-# Shared platform venv — rebuild from .claude/skills/run-alphalens/SKILL.md
+# Environments
 .venv/
+venv/
+.env
 
-# ── The three surfaces are each their own git repo with their own remote ──
-# Do NOT track them here. `git add` on a directory containing a .git records a
-# gitlink (mode 160000) — a broken submodule pointer whose contents are not
-# tracked and which renders as a dead link on GitHub.
-# Commit inside a surface with:  git -C stock_simulator commit ...
-# To make them real submodules instead, see the note in CLAUDE.md.
-/stock_simulator/
-/stock-valuation-dashboard/
-/SentimentFinance/
-
-# Fourth surface: its own repo, same gitlink reasoning as above.
-/AlgoBacktester/
-
-# Symlinks Streamlit creates into .venv (dangle without a local venv)
+# Streamlit auto-links its agent skill into the project from the venv
 .agents/
 .claude/skills/developing-with-streamlit
+
+# OS
+.DS_Store

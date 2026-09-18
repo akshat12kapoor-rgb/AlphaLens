@@ -1,0 +1,4 @@
+# Development extras: the test suite and the browser-driven checks.
+-r requirements.txt
+pytest>=8.0
+playwright>=1.40
