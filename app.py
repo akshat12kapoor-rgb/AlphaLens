@@ -6,6 +6,7 @@ AlphaLens - the financial analysis and trading simulation platform.
 One Streamlit app over four tools that share an active ticker:
 
     Overview             what every tool says about the ticker right now
+    Watchlist            several tickers at once, same four lenses, compared
     Valuation            DCF and comparable multiples
     News Sentiment       lexicon scoring of headlines
     Strategy Backtester   strategies against history, with parameter sweeps
@@ -25,6 +26,8 @@ PAGES = {
     "AlphaLens": [
         st.Page("views/overview.py", title="Overview", icon=":material/dashboard:",
                 url_path="overview", default=True),
+        st.Page("views/watchlist.py", title="Watchlist", icon=":material/list_alt:",
+                url_path="watchlist"),
     ],
     "Research": [
         st.Page("views/valuation.py", title="Valuation", icon=":material/calculate:",
