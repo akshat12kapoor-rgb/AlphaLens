@@ -139,4 +139,14 @@ def render() -> None:
     st.plotly_chart(valuation_charts.sensitivity(grid, verdict.current_price, data.currency),
                     width="stretch", key="val_sensitivity")
 
+    st.divider()
+    left, right = st.columns(2)
+    with left:
+        st.page_link("views/backtester.py",
+                     label="See how a trend strategy did on this history",
+                     icon=":material/query_stats:")
+    with right:
+        st.page_link("views/sentiment.py", label="Check what the news says",
+                     icon=":material/newspaper:")
+
     st.caption("Educational use only — not financial advice.")

@@ -131,7 +131,12 @@ def _sentiment_card(symbol: str) -> Read | None:
 
 
 def _backtest_card(symbol: str, history, currency: str) -> Read | None:
-    box = _card("Backtest", "MA crossover 20/50, last 2 years")
+    # Deliberately not synced to whatever's chosen on the Backtester page -
+    # this fixed benchmark is what makes the card meaningful to compare across
+    # tickers and sessions. The caption says so, so a user who has picked RSI
+    # or MACD elsewhere isn't left wondering why this card didn't follow them.
+    box = _card("Backtest", "MA crossover 20/50, last 2 years - a fixed "
+                            "benchmark, independent of your Backtester settings")
     read = None
     with box:
         if not history.ok:
@@ -181,7 +186,7 @@ def _technicals(frame: pd.DataFrame) -> dict:
             "recent": recent}
 
 
-def _simulator_card(history) -> Read | None:
+def _simulator_card(symbol: str, history) -> Read | None:
     box = _card("Trading simulator", "Where the technicals stand today")
     read = None
     with box:
@@ -201,8 +206,15 @@ def _simulator_card(history) -> Read | None:
                 lean = "bullish" if signals["uptrend"] else "bearish"
                 trend = "an uptrend" if signals["uptrend"] else "a downtrend"
                 read = Read("Technicals", lean, f"is in {trend} (RSI {signals['zone']})")
-        st.page_link(PAGES["simulator"], label="Trade it in simulation",
-                     icon=":material/candlestick_chart:")
+        # A plain page_link would land on the simulator's empty "press Load
+        # data" state - every other card's link drops you on a populated
+        # page, this one alone didn't. Route through the same handoff the
+        # Backtester uses so this one does too.
+        if st.button("Trade it in simulation", icon=":material/candlestick_chart:",
+                     width="stretch", key="overview_sim_handoff"):
+            st.session_state[context.SIM_REQUEST_KEY] = {
+                "symbol": symbol, "strategy": "manual", "params": {}, "period": "2y"}
+            st.switch_page(PAGES["simulator"])
     return read
 
 
@@ -274,7 +286,7 @@ def render() -> None:
     with columns[2]:
         backtest_read = _backtest_card(symbol, history, currency)
     with columns[3]:
-        simulator_read = _simulator_card(history)
+        simulator_read = _simulator_card(symbol, history)
 
     _synthesis([valuation_read, sentiment_read, backtest_read, simulator_read])
 
