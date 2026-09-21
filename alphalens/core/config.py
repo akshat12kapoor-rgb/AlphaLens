@@ -18,11 +18,12 @@ DEFAULT_TRADE_FRACTION = 0.10
 
 #: Backtest cost per unit of turnover (5 bps of traded notional).
 DEFAULT_COMMISSION = 0.0005
-#: Suggested slippage per unit of turnover for the UI (5 bps). The engine
-#: itself defaults slippage to 0.0 so `engine.run`'s golden-number tests stay
-#: exact; this is what the backtester page pre-fills so a user has to
-#: consciously turn slippage off rather than never see it modelled at all.
-SUGGESTED_SLIPPAGE = 0.0005
+#: Slippage defaults to zero, like the engine's own `slippage` parameter -
+#: not because zero is realistic, but because the overview card runs the same
+#: MA 20/50 backtest with the engine's bare defaults, and the two must agree.
+#: The backtester page exposes the input so a user can model it deliberately;
+#: it just doesn't turn it on silently under a page that has to match another.
+DEFAULT_SLIPPAGE = 0.0
 
 #: Band around fair value inside which the valuation verdict is HOLD.
 MARGIN_OF_SAFETY = 0.15

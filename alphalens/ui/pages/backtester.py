@@ -9,7 +9,7 @@ import streamlit as st
 
 from alphalens.backtest import engine, sweep
 from alphalens.charts import portfolio as portfolio_charts
-from alphalens.core.config import DEFAULT_COMMISSION, INITIAL_CAPITAL, SUGGESTED_SLIPPAGE
+from alphalens.core.config import DEFAULT_COMMISSION, DEFAULT_SLIPPAGE, INITIAL_CAPITAL
 from alphalens.core.currency import money
 from alphalens.data import csv_prices
 from alphalens.data.models import DataUnavailable
@@ -74,10 +74,12 @@ def _settings():
         cost_bps = st.number_input("Cost per trade (bps of notional)", 0.0, 100.0,
                                    DEFAULT_COMMISSION * 10_000, 1.0, key="bt_cost")
         slippage_bps = st.number_input("Slippage (bps of notional)", 0.0, 100.0,
-                                       SUGGESTED_SLIPPAGE * 10_000, 1.0, key="bt_slippage",
+                                       DEFAULT_SLIPPAGE * 10_000, 1.0, key="bt_slippage",
                                        help="Price impact and spread the commission line "
                                             "above doesn't cover. Zero assumes a fill at "
-                                            "exactly the close, which no real order gets.")
+                                            "exactly the close, which no real order gets - "
+                                            "try 5-10 bps to see how much that assumption "
+                                            "is worth.")
     return (source, period, upload, strategy, params, allow_short, capital,
             cost_bps / 10_000, slippage_bps / 10_000)
 
