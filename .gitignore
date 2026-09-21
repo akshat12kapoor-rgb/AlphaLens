@@ -8,6 +8,7 @@ __pycache__/
 .venv/
 venv/
 .env
+.streamlit/secrets.toml
 
 # Streamlit auto-links its agent skill into the project from the venv
 .agents/

@@ -18,7 +18,7 @@ MODELS = {
 }
 
 
-def _assumptions(defaults: Assumptions) -> Assumptions:
+def _assumptions(defaults: Assumptions, symbol: str) -> Assumptions:
     with st.sidebar:
         st.subheader("Assumptions")
         model = st.radio("DCF model", list(MODELS), index=1, key="val_model",
@@ -42,9 +42,14 @@ def _assumptions(defaults: Assumptions) -> Assumptions:
 
         st.divider()
         st.subheader("Comparables")
-        override = st.toggle("Override sector multiples", value=False, key="val_override")
-        pe = st.number_input("P/E", 1.0, 100.0, 20.0, 0.5, key="val_pe") if override else None
-        ev = st.number_input("EV/EBITDA", 1.0, 50.0, 12.0, 0.5, key="val_ev") if override else None
+        # Keyed by symbol: an override chosen for one ticker must not silently
+        # carry into another ticker's fair-value calculation after switching.
+        override = st.toggle("Override sector multiples", value=False,
+                             key=f"val_override_{symbol}")
+        pe = st.number_input("P/E", 1.0, 100.0, 20.0, 0.5, key=f"val_pe_{symbol}") \
+            if override else None
+        ev = st.number_input("EV/EBITDA", 1.0, 50.0, 12.0, 0.5, key=f"val_ev_{symbol}") \
+            if override else None
 
         st.divider()
         weight = st.slider("DCF weight in the blend", 0, 100,
@@ -67,7 +72,7 @@ def render() -> None:
         st.error(layout.markdown_safe(f"Could not load {symbol}: {loaded.error}"))
         return
     data = loaded.value
-    assumptions = _assumptions(Assumptions())
+    assumptions = _assumptions(Assumptions(), symbol)
 
     try:
         result = value(data, assumptions)
@@ -102,9 +107,11 @@ def render() -> None:
                  else f"{amount / verdict.current_price - 1:+.1%}"}
                 for name, amount in verdict.breakdown().items()]
         st.dataframe(pd.DataFrame(rows), hide_index=True, width="stretch", key="val_breakdown")
+        overridden = assumptions.pe_override is not None
         st.caption(f"Multiples used: P/E {result.multiples.pe_multiple:.1f}× · "
                    f"EV/EBITDA {result.multiples.ev_ebitda_multiple:.1f}× · "
-                   f"methods: {', '.join(result.multiples.methods) or 'none available'}")
+                   f"methods: {', '.join(result.multiples.methods) or 'none available'}"
+                   + (" · **sector multiples overridden**" if overridden else ""))
 
     st.divider()
     st.subheader("Projections")

@@ -38,8 +38,21 @@ class DCFResult:
         return [f"Year {t}" for t in range(1, len(self.projected_fcf) + 1)]
 
 
-def validate(wacc: float, terminal_growth: float) -> None:
-    """Guard the inputs that break the model."""
+def _validate_growth_rate(growth_rate: float) -> None:
+    if growth_rate <= -1:
+        raise ValueError(
+            f"Growth rate ({growth_rate:.1%}) cannot be -100% or lower - "
+            "cash flow can't shrink past zero.")
+
+
+def validate(wacc: float, terminal_growth: float, growth_rate: float | None = None) -> None:
+    """Guard the inputs that break the model.
+
+    `growth_rate` is optional because callers checking only the discounting
+    inputs (the sensitivity grid, say) may not have one in hand yet; `run()`
+    and `project()` always pass theirs. The UI clamps its slider to [0%, 40%],
+    but both are public and used directly by tests, the CLI and each other.
+    """
     if wacc <= 0:
         raise ValueError("The discount rate must be positive.")
     if terminal_growth < 0:
@@ -49,6 +62,8 @@ def validate(wacc: float, terminal_growth: float) -> None:
             f"The discount rate ({wacc:.1%}) must exceed terminal growth "
             f"({terminal_growth:.1%}), or the Gordon Growth Model gives an "
             "infinite terminal value.")
+    if growth_rate is not None:
+        _validate_growth_rate(growth_rate)
 
 
 def growth_path(growth_rate: float, terminal_growth: float, stage1_years: int,
@@ -63,7 +78,7 @@ def growth_path(growth_rate: float, terminal_growth: float, stage1_years: int,
 def run(base_fcf: float, shares_outstanding: float, growth_rate: float, wacc: float,
         terminal_growth: float, stage1_years: int = 5, stage2_years: int = 0) -> DCFResult:
     """Value one share from free cash flow."""
-    validate(wacc, terminal_growth)
+    validate(wacc, terminal_growth, growth_rate)
     if not base_fcf or base_fcf <= 0:
         raise ValueError("A DCF needs positive free cash flow.")
     if not shares_outstanding or shares_outstanding <= 0:
@@ -89,6 +104,7 @@ def run(base_fcf: float, shares_outstanding: float, growth_rate: float, wacc: fl
 def project(base_value: float, growth_rate: float, terminal_growth: float,
             stage1_years: int = 5, stage2_years: int = 0) -> list[float]:
     """Grow any figure (revenue, say) along the same path, for charting."""
+    _validate_growth_rate(growth_rate)
     out, previous = [], base_value
     for rate in growth_path(growth_rate, terminal_growth, stage1_years, stage2_years):
         previous *= (1 + rate)

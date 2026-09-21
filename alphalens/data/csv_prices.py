@@ -43,6 +43,13 @@ def load_prices(source, symbol: str | None = None) -> tuple[pd.DataFrame, str]:
     frame.columns = OHLCV
     if frame.empty:
         raise DataUnavailable(f"{name} has no data rows")
+    # Matches yahoo.prices(): a zero-volume bar (a halt, a missing trading day
+    # padded with the prior close) would otherwise splice its neighbours
+    # together for SMC's candle-adjacency checks, giving a different FVG/sweep
+    # count for the same underlying history depending only on the data source.
+    frame = frame[frame["volume"] > 0]
+    if frame.empty:
+        raise DataUnavailable(f"{name} has no bars with nonzero volume")
     return frame, name
 
 

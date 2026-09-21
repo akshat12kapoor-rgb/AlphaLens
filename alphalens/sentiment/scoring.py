@@ -14,6 +14,7 @@ How one headline is scored:
 """
 from __future__ import annotations
 
+import html
 import math
 import re
 from collections import defaultdict
@@ -24,6 +25,11 @@ from alphalens.sentiment.feed import Headline
 from alphalens.sentiment.lexicon import INTENSIFIERS, NEGATORS, polarity
 
 TOKEN = re.compile(r"[a-z][a-z'\-]*")
+#: Same shape as TOKEN, generalised to any Unicode letter instead of only
+#: a-z, so it counts "words" the same way TOKEN does - one match per
+#: possessive or hyphenate, not split apart by the punctuation inside it.
+#: Used only to measure how much of a text TOKEN could read, not to score it.
+WORD = re.compile(r"[^\W\d_]+(?:['\-][^\W\d_]+)*")
 NEGATION_WINDOW = 2
 #: Raw score at which the squashed score reaches about 0.76.
 SQUASH = 4.0
@@ -33,7 +39,23 @@ MOMENTUM_BAND = 0.05
 
 
 def tokenize(text: str) -> list[str]:
-    return TOKEN.findall(text.lower())
+    return TOKEN.findall(html.unescape(text).lower())
+
+
+def coverage(text: str) -> float:
+    """Share of `text`'s words the ASCII, English-only tokenizer could
+    actually read.
+
+    The lexicon only knows English and `TOKEN` only matches a-z, so a
+    headline in another script, or HTML that never decoded, produces zero
+    hits and scores exactly 0.0 / "neutral" - identical to genuinely neutral
+    news. 1.0 means every word was read; it says nothing about tone.
+    """
+    text = html.unescape(text)
+    total = len(WORD.findall(text))
+    if total == 0:
+        return 1.0
+    return min(1.0, len(TOKEN.findall(text.lower())) / total)
 
 
 @dataclass(frozen=True)
@@ -44,6 +66,7 @@ class Score:
     raw: float
     score: float
     hits: list[tuple[str, float]] = field(default_factory=list)
+    coverage: float = 1.0
 
     @property
     def label(self) -> str:
@@ -83,7 +106,8 @@ def score_text(text: str) -> Score:
         hits.append((token, round(weight, 2)))
 
     return Score(text=text, raw=round(total, 3),
-                 score=round(math.tanh(total / SQUASH), 4), hits=hits)
+                 score=round(math.tanh(total / SQUASH), 4), hits=hits,
+                 coverage=round(coverage(text), 3))
 
 
 @dataclass(frozen=True)
@@ -136,10 +160,23 @@ class TickerSentiment:
         return "flat"
 
     @property
+    def readable_share(self) -> float:
+        """Share of headlines whose text the tokenizer could mostly read.
+
+        Below half means the aggregate reading is built largely from text
+        `score_text` couldn't parse - a different script, or HTML that never
+        decoded - not from genuinely neutral news reading that way.
+        """
+        if not self.scores:
+            return 1.0
+        return sum(1 for s in self.scores if s.coverage >= 0.5) / len(self.scores)
+
+    @property
     def confidence(self) -> str:
-        """How much to trust the reading, from sample size and agreement."""
+        """How much to trust the reading, from sample size, agreement, and
+        how much of the text was actually readable."""
         count = len(self.scores)
-        if count < 3:
+        if count < 3 or self.readable_share < 0.5:
             return "low"
         agreement = max(self.counts.values()) / count
         if count >= 6 and agreement >= 0.6:
@@ -148,12 +185,22 @@ class TickerSentiment:
 
 
 def score_headlines(headlines: list[Headline]) -> dict[str, TickerSentiment]:
-    """Score every headline and aggregate per ticker."""
+    """Score every headline and aggregate per ticker.
+
+    One bad headline must not sink the whole batch: every other pipeline in
+    the platform (`ui/context.attempt`) already degrades a single card rather
+    than crashing the page, and today's feed sources all guarantee a non-empty
+    `str` text - but nothing enforces that upstream, so a future source is one
+    stray `None` away from an `AttributeError` here otherwise.
+    """
     scores: dict[str, list[Score]] = defaultdict(list)
     daily: dict[str, dict[date, list[float]]] = defaultdict(lambda: defaultdict(list))
 
     for headline in headlines:
-        score = score_text(headline.text)
+        try:
+            score = score_text(headline.text)
+        except Exception:  # noqa: BLE001 - a malformed headline must not sink the batch
+            continue
         scores[headline.ticker].append(score)
         daily[headline.ticker][headline.date].append(score.score)
 

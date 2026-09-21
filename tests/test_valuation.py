@@ -54,6 +54,13 @@ def test_dcf_needs_cash_flow_and_a_share_count():
         dcf.run(100, 0, 0.1, 0.1, 0.03)
 
 
+def test_growth_rate_at_or_below_negative_100_percent_is_rejected():
+    with pytest.raises(ValueError, match="-100%"):
+        dcf.run(100, 10, growth_rate=-1.0, wacc=0.10, terminal_growth=0.03)
+    with pytest.raises(ValueError, match="-100%"):
+        dcf.project(100, growth_rate=-1.5, terminal_growth=0.03)
+
+
 def test_sensitivity_grid_rises_as_growth_rises(fundamentals):
     grid = dcf.sensitivity(fundamentals.free_cash_flow, fundamentals.shares_outstanding,
                            terminal_growth=0.03)

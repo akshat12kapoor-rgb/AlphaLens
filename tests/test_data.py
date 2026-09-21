@@ -1,7 +1,10 @@
 """The data layer: CSV loading, Yahoo normalisation helpers, offline fixtures."""
+import time
+
 import pandas as pd
 import pytest
 
+from alphalens.data import cache as cache_module
 from alphalens.data import csv_prices, fixtures, yahoo
 from alphalens.data.models import DataUnavailable, Fundamentals, MissingData
 
@@ -38,6 +41,19 @@ def test_duplicate_dates_are_rejected(tmp_path):
 def test_bad_dates_are_reported_with_a_row_number(tmp_path):
     with pytest.raises(DataUnavailable, match="row 2"):
         csv_prices.load_prices(write(tmp_path, "Date,Open,High,Low,Close,Volume\nnope,1,1,1,1,1\n"))
+
+
+def test_zero_volume_rows_are_dropped_like_yahoo_prices(tmp_path):
+    csv = CSV + "2024-01-04,10.5,11,10,10.8,0\n"
+    frame, _ = csv_prices.load_prices(write(tmp_path, csv))
+    assert len(frame) == 2
+    assert (frame["volume"] > 0).all()
+
+
+def test_an_all_zero_volume_csv_is_rejected(tmp_path):
+    csv = "Date,Open,High,Low,Close,Volume\n2024-01-01,1,1,1,1,0\n"
+    with pytest.raises(DataUnavailable, match="nonzero volume"):
+        csv_prices.load_prices(write(tmp_path, csv))
 
 
 def test_sample_prices_ship_with_the_platform():
@@ -85,6 +101,101 @@ def test_missing_statements_give_empty_series():
     assert yahoo._latest(pd.Series(dtype="float64")) is None
 
 
+def test_fundamentals_rescale_statements_to_match_the_quote_currency(monkeypatch):
+    """LSE-style tickers quote in pence (GBp) but report statements in pounds
+    (GBP). `price` and the statement figures must end up in the same unit."""
+    info = {
+        "currency": "GBp",
+        "financialCurrency": "GBP",
+        "currentPrice": 500.0,
+        "trailingEps": 45.0,
+        "totalRevenue": 1_000_000.0,
+        "freeCashflow": 200_000.0,
+        "ebitda": 300_000.0,
+        "netIncomeToCommon": 150_000.0,
+        "totalDebt": 50_000.0,
+        "totalCash": 20_000.0,
+        "sharesOutstanding": 1_000.0,
+        "longName": "Test PLC",
+    }
+    empty_stock = type("Stock", (), {"income_stmt": pd.DataFrame(), "cashflow": pd.DataFrame(),
+                                     "balance_sheet": pd.DataFrame()})()
+    monkeypatch.setattr(yahoo, "_info", lambda symbol: info)
+    monkeypatch.setattr(yahoo, "_ticker", lambda symbol: empty_stock)
+
+    data = yahoo.fundamentals.__wrapped__("TEST.L")
+
+    assert data.currency == "GBp"
+    assert data.price == 500.0
+    assert data.eps == 45.0  # already in the quote currency, never rescaled
+    assert data.revenue == pytest.approx(1_000_000.0 * 100)
+    assert data.free_cash_flow == pytest.approx(200_000.0 * 100)
+    assert data.ebitda == pytest.approx(300_000.0 * 100)
+    assert data.net_income == pytest.approx(150_000.0 * 100)
+    assert data.total_debt == pytest.approx(50_000.0 * 100)
+    assert data.cash == pytest.approx(20_000.0 * 100)
+
+
+def test_fundamentals_do_not_rescale_when_currencies_already_match(monkeypatch):
+    info = {"currency": "USD", "financialCurrency": "USD", "currentPrice": 100.0,
+            "totalRevenue": 500.0, "sharesOutstanding": 10.0}
+    empty_stock = type("Stock", (), {"income_stmt": pd.DataFrame(), "cashflow": pd.DataFrame(),
+                                     "balance_sheet": pd.DataFrame()})()
+    monkeypatch.setattr(yahoo, "_info", lambda symbol: info)
+    monkeypatch.setattr(yahoo, "_ticker", lambda symbol: empty_stock)
+
+    data = yahoo.fundamentals.__wrapped__("TEST")
+
+    assert data.currency == "USD"
+    assert data.revenue == 500.0
+
+
+# ── network resilience (retry + negative cache) ─────────────────────────────
+
+def test_with_retry_recovers_after_transient_failures():
+    calls = {"n": 0}
+
+    def flaky():
+        calls["n"] += 1
+        if calls["n"] < 3:
+            raise ConnectionError("boom")
+        return "ok"
+
+    assert yahoo._with_retry(flaky, attempts=3, base_delay=0) == "ok"
+    assert calls["n"] == 3
+
+
+def test_with_retry_raises_the_last_failure_once_exhausted():
+    def always_fails():
+        raise ConnectionError("still down")
+
+    with pytest.raises(ConnectionError, match="still down"):
+        yahoo._with_retry(always_fails, attempts=2, base_delay=0)
+
+
+def test_negative_cache_short_circuits_until_the_cooldown_expires():
+    calls = {"n": 0}
+
+    @cache_module.negative_cache(ttl=0.05)
+    def flaky(symbol):
+        calls["n"] += 1
+        raise DataUnavailable("down")
+
+    with pytest.raises(DataUnavailable):
+        flaky("NEGATIVE_CACHE_TEST")
+    assert calls["n"] == 1
+
+    # Immediately again: still within the cooldown, must not retry the network.
+    with pytest.raises(DataUnavailable):
+        flaky("NEGATIVE_CACHE_TEST")
+    assert calls["n"] == 1
+
+    time.sleep(0.06)
+    with pytest.raises(DataUnavailable):
+        flaky("NEGATIVE_CACHE_TEST")
+    assert calls["n"] == 2
+
+
 def test_periods_are_limited_per_interval():
     assert "10y" in yahoo.periods_for("1d")
     assert yahoo.periods_for("5m") == ["5d", "1mo"]
@@ -109,6 +220,13 @@ def test_missing_fields_are_named_in_the_error():
     empty = Fundamentals(symbol="X", name="X", currency="USD")
     with pytest.raises(MissingData, match="free cash flow, shares outstanding"):
         empty.require("free_cash_flow", "shares_outstanding")
+
+
+def test_a_genuinely_zero_field_is_not_reported_as_missing():
+    """A break-even company has free cash flow - it's just 0.0, not absent."""
+    breakeven = Fundamentals(symbol="X", name="X", currency="USD", free_cash_flow=0.0,
+                             shares_outstanding=10.0)
+    breakeven.require("free_cash_flow", "shares_outstanding")  # must not raise
 
 
 def test_install_serves_every_symbol_from_the_snapshot(monkeypatch):

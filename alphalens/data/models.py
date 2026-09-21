@@ -53,7 +53,10 @@ class Fundamentals:
 
     def require(self, *fields: str) -> None:
         """Raise a readable error naming what this symbol is missing."""
-        missing = [f for f in fields if not getattr(self, f)]
+        # `is None`, not truthiness: a company with exactly break-even free
+        # cash flow (0.0) has data, it's just zero - it must not be reported
+        # as something Yahoo doesn't publish.
+        missing = [f for f in fields if getattr(self, f) is None]
         if missing:
             raise MissingData(
                 f"{self.symbol} has no " + ", ".join(m.replace('_', ' ') for m in missing)

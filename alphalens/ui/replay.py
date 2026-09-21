@@ -24,6 +24,12 @@ STATE = "simulator"
 TICK = 0.25
 #: Candles shown after the current one when Learning Mode reveals an outcome.
 OUTCOME_BARS = 5
+#: Bars kept on screen in the replay chart. Without this, `visible` grows for
+#: the whole session - the candlestick, every indicator overlay and the
+#: chart's serialized payload to the browser all get redrawn bigger on every
+#: tick, so a long playback gets slower as it goes rather than staying flat.
+#: Full history stays in `frame`/`engine` for P&L accounting either way.
+CHART_WINDOW = 250
 
 
 @dataclass
@@ -62,8 +68,13 @@ class Session:
         return self.frame.index[self.index]
 
     @property
+    def visible_start(self) -> int:
+        """First bar included in `visible` - the window's left edge."""
+        return max(0, self.index + 1 - CHART_WINDOW)
+
+    @property
     def visible(self) -> pd.DataFrame:
-        return self.frame.iloc[:self.index + 1]
+        return self.frame.iloc[self.visible_start:self.index + 1]
 
     def signal_at(self, index: int) -> str:
         if self.signals is None:
@@ -121,12 +132,27 @@ def set_strategy(key: str, params: dict | None = None) -> None:
 
 
 def step(delta: int) -> None:
+    """Move the replay by `delta` candles.
+
+    Stepping forward must trade exactly like ticking does, one bar at a time —
+    otherwise a strategy's signals are only honoured when the user presses
+    Play, and the same replay produces different fills depending on which
+    control moved it.
+    """
     state = session()
-    if state.loaded:
-        state.index = max(0, min(state.index + delta, len(state.frame) - 1))
-        state.paused_event = None
-        state.revealed = False
-        state.call = None
+    if not state.loaded:
+        return
+    target = max(0, min(state.index + delta, len(state.frame) - 1))
+    if delta > 0:
+        while state.index < target:
+            _auto_trade(state)
+            state.engine.record_value(state.timestamp, state.price)
+            state.index += 1
+    else:
+        state.index = target
+    state.paused_event = None
+    state.revealed = False
+    state.call = None
 
 
 def reset_account() -> None:
@@ -156,6 +182,11 @@ def tick() -> None:
         state.message = ("success", "Replay complete — review the performance below.")
         st.rerun(scope="app")
 
+    # The trade for this bar must execute before we check whether Learning Mode
+    # wants to pause on it — otherwise a pause-worthy signal is the one signal
+    # that never gets traded, because the rerun below unwinds before it fires.
+    _auto_trade(state)
+
     event = _pause_event(state)
     if event is not None:
         state.playing = False
@@ -164,7 +195,6 @@ def tick() -> None:
         state.call = None
         st.rerun(scope="app")
 
-    _auto_trade(state)
     state.engine.record_value(state.timestamp, state.price)
     state.index += 1
 
@@ -183,6 +213,21 @@ def _auto_trade(state: Session) -> None:
                                       get(state.strategy_key).name)
         if result and result.get("success"):
             state.last_action = (result["message"], state.index)
+
+
+def windowed_gaps(gaps: pd.DataFrame | None, offset: int) -> pd.DataFrame | None:
+    """Rebase FVG rows onto a windowed frame that starts `offset` bars in.
+
+    `start_idx` is a position in the full frame; the chart looks it up
+    positionally in whatever frame it's given, so a gap that starts before the
+    window isn't drawable in it at all - there's no candle left to anchor it
+    to.
+    """
+    if not offset or gaps is None or gaps.empty:
+        return gaps
+    visible = gaps[gaps["start_idx"] >= offset].copy()
+    visible["start_idx"] = visible["start_idx"] - offset
+    return visible
 
 
 def _pause_event(state: Session) -> dict | None:

@@ -10,6 +10,20 @@ from alphalens.sentiment.scoring import TickerSentiment, score_headlines, score_
 from alphalens.ui import context, layout
 
 
+def _forget_other_tickers_source_choice(symbol: str) -> None:
+    """Keep only the current ticker's `sentiment_source_*` key.
+
+    It's scoped per symbol so switching tickers doesn't carry over a stale
+    "Upload feed" selection from a different one - but with no cleanup, a
+    session that looks at many tickers (POPULAR plus any typed symbol) would
+    grow one entry per ticker for the rest of its life. Only one is ever read
+    at a time, so the rest are just dead weight.
+    """
+    current = f"sentiment_source_{symbol}"
+    for key in [k for k in st.session_state if k.startswith("sentiment_source_") and k != current]:
+        del st.session_state[key]
+
+
 def _headline_scorer() -> None:
     st.subheader("Score a headline")
     text = st.text_input("Headline", value="Nvidia beats estimates but warns of weak demand",
@@ -124,6 +138,7 @@ def render() -> None:
     _headline_scorer()
     st.divider()
 
+    _forget_other_tickers_source_choice(symbol)
     options = [f"Live news · {symbol}", "Sample feed", "Upload feed"]
     source = st.segmented_control("Headlines", options, default=options[0],
                                   key=f"sentiment_source_{symbol}")

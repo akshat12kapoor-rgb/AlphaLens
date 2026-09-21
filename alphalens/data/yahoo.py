@@ -9,15 +9,33 @@ yfinance is imported lazily: the CLIs and most tests never touch the network.
 """
 from __future__ import annotations
 
+import time
 from datetime import datetime
+from typing import Callable, TypeVar
 
 import pandas as pd
 
 from alphalens.core.currency import guess_currency
-from alphalens.data.cache import cached
+from alphalens.data.cache import cached, negative_cache
 from alphalens.data.models import DataUnavailable, Fundamentals, Quote, Story
 
+T = TypeVar("T")
+
+#: Attempts (and the backoff between them) for a single Yahoo call. Yahoo
+#: failures are almost always transient - a dropped connection, a momentary
+#: rate limit - and clear within a couple of seconds.
+RETRY_ATTEMPTS = 3
+RETRY_BASE_DELAY = 0.6
+
 OHLCV = ["open", "high", "low", "close", "volume"]
+
+#: Instruments where Yahoo quotes the price in a minor unit but reports
+#: statements in the major unit of the same currency, keyed by financial
+#: currency -> quote currency. LSE stocks are the common case: `currency`
+#: comes back "GBp" (pence) while `financialCurrency` is "GBP" (pounds), 100x
+#: apart. Statement-derived figures are rescaled into the quote currency so
+#: they line up with `price`, which is never in the financial currency.
+MINOR_UNIT_OF = {"GBP": "GBp"}
 
 #: Yahoo only serves intraday bars for a recent window.
 INTRADAY_LIMIT_DAYS = {"1m": 7, "5m": 60, "15m": 60, "30m": 60, "1h": 730}
@@ -44,19 +62,38 @@ def _ticker(symbol: str):
     return yf.Ticker(symbol.upper().strip())
 
 
+def _with_retry(fn: Callable[[], T], attempts: int = RETRY_ATTEMPTS,
+                base_delay: float = RETRY_BASE_DELAY) -> T:
+    """Call `fn` with exponential backoff, re-raising the last failure."""
+    last: Exception | None = None
+    for attempt in range(attempts):
+        try:
+            return fn()
+        except Exception as exc:  # noqa: BLE001 - yfinance raises a wide variety
+            last = exc
+            if attempt < attempts - 1:
+                time.sleep(base_delay * (2 ** attempt))
+    raise last  # type: ignore[misc]
+
+
 # ── prices ──────────────────────────────────────────────────────────────────
 
-@cached()
+@negative_cache()
+@cached(spinner="Fetching prices…")
 def prices(symbol: str, period: str = "2y", interval: str = "1d") -> pd.DataFrame:
     """OHLCV bars, lowercase columns, tz-naive index, zero-volume bars dropped.
 
     Raises DataUnavailable with Yahoo's interval limit spelled out, which is the
     usual cause of an empty intraday response.
     """
+    stock = _ticker(symbol)
     try:
-        raw = _ticker(symbol).history(period=period, interval=interval, auto_adjust=True)
+        raw = _with_retry(lambda: stock.history(period=period, interval=interval,
+                                                 auto_adjust=True, timeout=15))
     except Exception as exc:  # noqa: BLE001 - yfinance raises a wide variety
-        raise DataUnavailable(f"Could not fetch prices for {symbol!r}: {exc}") from exc
+        raise DataUnavailable(
+            f"Could not fetch prices for {symbol!r} after {RETRY_ATTEMPTS} attempts: {exc}"
+        ) from exc
 
     if raw.empty:
         limit = INTRADAY_LIMIT_DAYS.get(interval)
@@ -79,7 +116,7 @@ def prices(symbol: str, period: str = "2y", interval: str = "1d") -> pd.DataFram
 
 # ── quote ───────────────────────────────────────────────────────────────────
 
-@cached()
+@cached(spinner="Fetching quote…")
 def quote(symbol: str) -> Quote:
     """Name, currency and last price. The currency here is what every tool
     formats with, so it is never guessed when Yahoo reports one."""
@@ -98,7 +135,7 @@ def quote(symbol: str) -> Quote:
 
 # ── fundamentals ────────────────────────────────────────────────────────────
 
-@cached()
+@cached(spinner="Fetching fundamentals…")
 def fundamentals(symbol: str) -> Fundamentals:
     """Normalise Yahoo's statements into the fields the valuation models need.
 
@@ -114,27 +151,42 @@ def fundamentals(symbol: str) -> Fundamentals:
     revenue_history = _row(income, ["Total Revenue", "Operating Revenue", "Revenue"])
     fcf_history = _free_cash_flow(cashflow)
 
+    # `price`/`eps` are quote-currency fields; every other figure below comes
+    # from the financial statements (or an `info` field mirroring them) and is
+    # in `financialCurrency`. Rescale those into the quote currency so nothing
+    # here mixes units with `price`.
+    quote_currency = info.get("currency") or guess_currency(symbol)
+    financial_currency = info.get("financialCurrency") or quote_currency
+    fx = 100.0 if MINOR_UNIT_OF.get(financial_currency) == quote_currency else 1.0
+
+    def rescaled(value: float | None) -> float | None:
+        return None if value is None else value * fx
+
+    def rescaled_series(series: pd.Series) -> pd.Series:
+        return series * fx if fx != 1.0 else series
+
     return Fundamentals(
         symbol=symbol.upper(),
         name=_first(info, ["longName", "shortName"]) or symbol.upper(),
-        currency=info.get("financialCurrency") or info.get("currency") or guess_currency(symbol),
+        currency=quote_currency,
         price=_price(symbol, info),
         shares_outstanding=info.get("sharesOutstanding"),
-        revenue=_latest(revenue_history) or info.get("totalRevenue"),
-        free_cash_flow=_latest(fcf_history) or info.get("freeCashflow"),
-        ebitda=_latest(_row(income, ["EBITDA", "Normalized EBITDA"])) or info.get("ebitda"),
-        net_income=(_latest(_row(income, ["Net Income", "Net Income Common Stockholders"]))
-                    or info.get("netIncomeToCommon")),
+        revenue=rescaled(_latest(revenue_history) or info.get("totalRevenue")),
+        free_cash_flow=rescaled(_latest(fcf_history) or info.get("freeCashflow")),
+        ebitda=rescaled(_latest(_row(income, ["EBITDA", "Normalized EBITDA"]))
+                        or info.get("ebitda")),
+        net_income=rescaled(_latest(_row(income, ["Net Income", "Net Income Common Stockholders"]))
+                            or info.get("netIncomeToCommon")),
         eps=_first(info, ["trailingEps", "epsTrailingTwelveMonths"]),
-        total_debt=(_latest(_row(balance, ["Total Debt", "Long Term Debt"]))
-                    or info.get("totalDebt") or 0.0),
-        cash=(_latest(_row(balance, ["Cash And Cash Equivalents",
+        total_debt=rescaled((_latest(_row(balance, ["Total Debt", "Long Term Debt"]))
+                             or info.get("totalDebt") or 0.0)),
+        cash=rescaled((_latest(_row(balance, ["Cash And Cash Equivalents",
                                      "Cash Cash Equivalents And Short Term Investments"]))
-              or info.get("totalCash") or 0.0),
+                       or info.get("totalCash") or 0.0)),
         sector=info.get("sector"),
         industry=info.get("industry"),
-        revenue_history=revenue_history,
-        fcf_history=fcf_history,
+        revenue_history=rescaled_series(revenue_history),
+        fcf_history=rescaled_series(fcf_history),
     )
 
 
@@ -144,9 +196,11 @@ def fetch_news(symbol: str) -> list[Story]:
     """Recent Yahoo stories. Yahoo's feed for a ticker can include broader
     market pieces, not only company news."""
     try:
-        items = _ticker(symbol).news or []
+        items = _with_retry(lambda: _ticker(symbol).news) or []
     except Exception as exc:  # noqa: BLE001
-        raise DataUnavailable(f"Could not fetch news for {symbol!r}: {exc}") from exc
+        raise DataUnavailable(
+            f"Could not fetch news for {symbol!r} after {RETRY_ATTEMPTS} attempts: {exc}"
+        ) from exc
 
     stories: list[Story] = []
     for item in items:
@@ -169,7 +223,8 @@ def fetch_news(symbol: str) -> list[Story]:
     return sorted(stories, key=lambda s: s.published)
 
 
-@cached()
+@negative_cache()
+@cached(spinner="Fetching news…")
 def news(symbol: str) -> list[Story]:
     # Resolved at call time so offline runs and tests can replace fetch_news.
     return globals()["fetch_news"](symbol)
@@ -179,7 +234,7 @@ def news(symbol: str) -> list[Story]:
 
 def _info(symbol: str) -> dict:
     try:
-        return _ticker(symbol).info or {}
+        return _with_retry(lambda: _ticker(symbol).info) or {}
     except Exception:  # noqa: BLE001 - a missing profile is not fatal
         return {}
 
@@ -189,7 +244,7 @@ def _price(symbol: str, info: dict) -> float | None:
     if value:
         return float(value)
     try:
-        history = _ticker(symbol).history(period="5d")
+        history = _with_retry(lambda: _ticker(symbol).history(period="5d", timeout=15))
         if not history.empty:
             return float(history["Close"].iloc[-1])
     except Exception:  # noqa: BLE001
@@ -207,7 +262,7 @@ def _first(info: dict, keys: list[str]):
 
 def _statement(stock, attribute: str) -> pd.DataFrame:
     try:
-        frame = getattr(stock, attribute)
+        frame = _with_retry(lambda: getattr(stock, attribute))
     except Exception:  # noqa: BLE001
         return pd.DataFrame()
     return frame if isinstance(frame, pd.DataFrame) else pd.DataFrame()

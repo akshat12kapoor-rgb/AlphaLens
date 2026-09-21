@@ -27,7 +27,12 @@ def sma(series: pd.Series, window: int) -> pd.Series:
 
 
 def ema(series: pd.Series, window: int) -> pd.Series:
-    return series.ewm(span=window, adjust=False).mean()
+    # min_periods matches `ta`'s EMAIndicator: without it, the pandas fallback
+    # returns a numeric value seeded from bar 0 during warm-up instead of NaN,
+    # which can fire spurious MACD crossovers that only exist because the EMA
+    # hasn't converged yet - a discrepancy that once made the two paths
+    # disagree on the same backtest (see CLAUDE.md).
+    return series.ewm(span=window, adjust=False, min_periods=window).mean()
 
 
 def rsi(series: pd.Series, period: int = RSI_PERIOD) -> pd.Series:
@@ -39,7 +44,23 @@ def rsi(series: pd.Series, period: int = RSI_PERIOD) -> pd.Series:
     strength = avg_gain / avg_loss.replace(0, np.nan)
     values = 100 - (100 / (1 + strength))
     # No losses in the window means maximum strength, not an undefined ratio.
-    return values.mask((avg_loss == 0) & (avg_gain > 0), 100.0)
+    values = values.mask((avg_loss == 0) & (avg_gain > 0), 100.0)
+    # No movement at all - a halted or wholly illiquid stretch - is neutral,
+    # not undefined. Kept here (not only in `flat_window`) so `rsi()` is
+    # correct standalone, independent of `enrich()`.
+    return values.mask((avg_loss == 0) & (avg_gain == 0), 50.0)
+
+
+def flat_window(close: pd.Series, period: int) -> pd.Series:
+    """Where price hasn't moved at all for `period` bars running.
+
+    `ta`'s RSIIndicator reads "no losses" as maximum strength and reports 100
+    even when there were no gains either - a halted or wholly illiquid
+    instrument, not genuine strength. Applied after either RSI implementation,
+    this keeps both paths reading a flat market as neutral (50).
+    """
+    moved = (close.diff().fillna(1) != 0).astype(int)
+    return moved.rolling(window=period, min_periods=period).max() == 0
 
 
 def macd(series: pd.Series, fast: int = MACD_FAST, slow: int = MACD_SLOW,
@@ -83,5 +104,9 @@ def enrich(frame: pd.DataFrame) -> pd.DataFrame:
         out[f"ema_{EMA_SHORT}"] = ema(close, EMA_SHORT)
         out["rsi"] = rsi(close)
         out["macd"], out["macd_signal"], out["macd_diff"] = macd(close)
+
+    # Applied regardless of which path just ran, so a genuinely flat market
+    # reads the same way whether or not `ta` is installed.
+    out.loc[flat_window(close, RSI_PERIOD), "rsi"] = 50.0
 
     return out

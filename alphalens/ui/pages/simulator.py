@@ -27,12 +27,14 @@ def render_chart(state: replay.Session, key: str) -> None:
     disagree about how the chart looks.
     """
     visible = state.visible
+    offset = state.visible_start
+    gaps = replay.windowed_gaps(state.context.fvg if state.context else None, offset)
     options = st.session_state.get("sim_overlays", {})
     figure = price_charts.candles(
         visible, currency=state.currency,
         title=f"{state.symbol} · {label_for(state.strategy_key)}",
-        signals=state.signals.iloc[:state.index + 1] if state.signals is not None else None,
-        gaps=state.context.fvg if state.context else None,
+        signals=state.signals.iloc[offset:state.index + 1] if state.signals is not None else None,
+        gaps=gaps,
         sweeps=state.context.sweeps if state.context else None,
         trades=state.engine.trades,
         show_ma=options.get("ma", True), show_rsi=options.get("rsi", True),
@@ -71,10 +73,12 @@ def _sidebar(state: replay.Session, symbol: str) -> None:
         if choice != MANUAL:
             strategy = get(choice)
             for parameter in strategy.parameters:
+                # Namespaced by strategy, not just page: see the matching note
+                # in ui/pages/backtester.py.
                 params[parameter.key] = st.number_input(
                     parameter.label, parameter.minimum, parameter.maximum,
                     state.params.get(parameter.key, parameter.default),
-                    key=f"sim_param_{parameter.key}", help=parameter.help)
+                    key=f"sim_param_{choice}_{parameter.key}", help=parameter.help)
             layout.strategy_help(strategy)
         if choice != state.strategy_key or params != state.params:
             replay.set_strategy(choice, params)

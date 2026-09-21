@@ -7,6 +7,7 @@ is set.
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import Any, Callable
 
@@ -20,6 +21,16 @@ TICKER_KEY = "alphalens_ticker"
 PICKER_KEY = "alphalens_ticker_picker"
 #: Set by the backtester to hand a strategy to the simulator.
 SIM_REQUEST_KEY = "alphalens_sim_request"
+
+#: What a Yahoo symbol can look like: letters, digits, and the punctuation
+#: real tickers use (BRK-B, RELIANCE.NS, BTC-USD, ^GSPC-style index prefixes
+#: aren't supported here but nothing in POPULAR needs one). Not a security
+#: boundary by itself - nothing derives a path or a shell command from the
+#: ticker, and `st.markdown` escapes HTML by default - but every downstream
+#: use (a live HTTP call, a handful of widget keys and headers) assumes
+#: something ticker-shaped, so garbage is rejected here rather than trusted
+#: everywhere it flows.
+TICKER_RE = re.compile(r"^[A-Z0-9.\-=]{1,15}$")
 
 POPULAR = [
     "AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "META", "TSLA", "AVGO", "AMD", "NFLX",
@@ -40,8 +51,11 @@ def ticker() -> str:
 
 
 def set_ticker(symbol: str) -> None:
+    """Set the active ticker, silently ignoring anything that isn't
+    ticker-shaped rather than letting it flow into a network call, a cache
+    key or a widget key built from the symbol."""
     symbol = normalise(symbol)
-    if symbol:
+    if symbol and TICKER_RE.match(symbol):
         st.session_state[TICKER_KEY] = symbol
 
 

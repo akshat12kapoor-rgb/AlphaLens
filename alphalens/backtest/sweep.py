@@ -18,7 +18,7 @@ WARNING = (
 
 def grid(frame: pd.DataFrame, strategy: Strategy, params: dict[str, list[int]], *,
          symbol: str = "", allow_short: bool = False,
-         commission: float = DEFAULT_COMMISSION,
+         commission: float = DEFAULT_COMMISSION, slippage: float = 0.0,
          context: Context | None = None) -> pd.DataFrame:
     """Run `strategy` over the cartesian product of `params`.
 
@@ -33,7 +33,7 @@ def grid(frame: pd.DataFrame, strategy: Strategy, params: dict[str, list[int]], 
         try:
             result = engine.run_strategy(frame, strategy, symbol=symbol,
                                          allow_short=allow_short, commission=commission,
-                                         context=context, **setting)
+                                         slippage=slippage, context=context, **setting)
         except ValueError:
             continue
         rows.append({**setting, "sharpe": result.sharpe,

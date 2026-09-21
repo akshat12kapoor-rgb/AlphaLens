@@ -48,6 +48,32 @@ def test_commission_reduces_return_when_the_strategy_trades(sample):
     assert free.trades == costly.trades
 
 
+def test_slippage_reduces_return_like_commission_does(sample):
+    free = engine.run_strategy(sample, get("ma_crossover"), symbol="SAMPLE", slippage=0.0)
+    costly = engine.run_strategy(sample, get("ma_crossover"), symbol="SAMPLE", slippage=0.01)
+    assert costly.total_return < free.total_return
+    assert free.trades == costly.trades
+
+
+def test_final_bar_position_change_is_costed_separately_from_equity(sample):
+    """A position that only opens on the very last bar has no future bar to
+    realize a return over, but opening it is still a real cost."""
+    positions = [0.0] * (len(sample) - 1) + [1.0]
+    result = engine.run(sample, positions, strategy="last-bar-entry", symbol="SAMPLE",
+                        commission=0.01, slippage=0.0)
+    assert result.final_position == 1.0
+    assert result.unrealized_entry_cost == pytest.approx(0.01 * result.equity[-1])
+    # It must not leak into the realized series - nothing to realize it against.
+    assert result.trades == 0
+    assert result.total_return == 0.0
+
+
+def test_unrealized_entry_cost_is_zero_when_the_final_position_is_unchanged(sample):
+    result = engine.run(sample, [1.0] * len(sample), strategy="always-long", symbol="SAMPLE")
+    assert result.unrealized_entry_cost == 0.0
+    assert result.final_position == 1.0
+
+
 def test_buy_and_hold_with_no_costs_is_the_price_return(sample):
     result = engine.run_strategy(sample, get("buy_and_hold"), symbol="SAMPLE", commission=0.0)
     price_return = sample["close"].iloc[-1] / sample["close"].iloc[0] - 1

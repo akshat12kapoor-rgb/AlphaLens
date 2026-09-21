@@ -136,8 +136,13 @@ def _rsi_events(frame: pd.DataFrame, context: Context, oversold: int = 30,
 def _macd_events(frame: pd.DataFrame, context: Context) -> pd.Series:
     signals = pd.Series(HOLD, index=frame.index, dtype=str)
     line, signal_line = frame["macd"], frame["macd_signal"]
-    signals[(line > signal_line) & (line.shift(1) <= signal_line.shift(1))] = BUY
-    signals[(line < signal_line) & (line.shift(1) >= signal_line.shift(1))] = SELL
+    # Both lines are NaN until the slow EMA has enough bars to mean anything -
+    # a NaN comparison is already False, but stated explicitly, like
+    # `_ma_regime` does, so warm-up bars can never fire a crossover no matter
+    # how the comparison below is written.
+    warm_up = line.isna() | signal_line.isna()
+    signals[(line > signal_line) & (line.shift(1) <= signal_line.shift(1)) & ~warm_up] = BUY
+    signals[(line < signal_line) & (line.shift(1) >= signal_line.shift(1)) & ~warm_up] = SELL
     return signals
 
 

@@ -29,6 +29,15 @@ class BacktestResult:
     positions: list[float] = field(repr=False)
     trades: int = 0
     initial_capital: float = INITIAL_CAPITAL
+    #: The strategy's decision on the very last bar - never realized into a
+    #: return, since there is no bar after it to hold it over.
+    final_position: float = 0.0
+    #: What entering `final_position` from the last realized position would
+    #: cost, at the run's commission + slippage rate. Not deducted from
+    #: `equity`/`returns`/`total_return`: there is no future bar in this
+    #: dataset to charge it against. Surfaced so a strategy that changes
+    #: position on the last bar doesn't look free when it isn't.
+    unrealized_entry_cost: float = 0.0
 
     @property
     def final_equity(self) -> float:
@@ -101,17 +110,21 @@ class BacktestResult:
 
 def run(frame: pd.DataFrame, positions: list[float], *, strategy: str, symbol: str,
         currency: str = "USD", capital: float = INITIAL_CAPITAL,
-        commission: float = DEFAULT_COMMISSION) -> BacktestResult:
+        commission: float = DEFAULT_COMMISSION, slippage: float = 0.0) -> BacktestResult:
     """Apply a position series to prices.
 
-    `commission` is charged on the traded notional whenever the position changes,
-    so a flat -> long switch of size 1.0 costs `commission` of equity.
+    `commission` + `slippage` are charged together on the traded notional
+    whenever the position changes, so a flat -> long switch of size 1.0 costs
+    `commission + slippage` of equity. Both default to what they modelled
+    before `slippage` existed: `slippage=0.0` keeps `run()` a pure commission
+    model unless a caller opts in.
     """
     if len(positions) != len(frame):
         raise ValueError(f"{len(positions)} positions for {len(frame)} bars")
     if len(frame) < 3:
         raise ValueError("a backtest needs at least 3 bars")
 
+    cost_rate = commission + slippage
     closes = frame["close"].tolist()
     equity, returns, held = [capital], [], []
     trades, previous = 0, 0.0
@@ -122,21 +135,27 @@ def run(frame: pd.DataFrame, positions: list[float], *, strategy: str, symbol: s
         if turnover > 0:
             trades += 1
         bar_return = closes[i + 1] / closes[i] - 1.0
-        net = position * bar_return - turnover * commission
+        net = position * bar_return - turnover * cost_rate
         equity.append(equity[-1] * (1 + net))
         returns.append(net)
         held.append(position)
         previous = position
 
+    final_position = positions[-1]
+    unrealized_entry_cost = abs(final_position - previous) * cost_rate * equity[-1]
+
     return BacktestResult(strategy=strategy, symbol=symbol, currency=currency,
                           dates=list(frame.index), equity=equity, returns=returns,
-                          positions=held, trades=trades, initial_capital=capital)
+                          positions=held, trades=trades, initial_capital=capital,
+                          final_position=final_position,
+                          unrealized_entry_cost=unrealized_entry_cost)
 
 
 def run_strategy(frame: pd.DataFrame, strategy: Strategy, *, symbol: str,
                  currency: str = "USD", allow_short: bool = False,
                  capital: float = INITIAL_CAPITAL, commission: float = DEFAULT_COMMISSION,
-                 context: Context | None = None, **params) -> BacktestResult:
+                 slippage: float = 0.0, context: Context | None = None,
+                 **params) -> BacktestResult:
     """Backtest a catalogue strategy, naming it as the user chose it."""
     context = context or Context.for_frame(frame)
     positions = strategy.positions(frame, context, allow_short=allow_short, **params)
@@ -146,7 +165,7 @@ def run_strategy(frame: pd.DataFrame, strategy: Strategy, *, symbol: str,
     if allow_short:
         label += " long/short"
     return run(frame, positions, strategy=label, symbol=symbol, currency=currency,
-               capital=capital, commission=commission)
+               capital=capital, commission=commission, slippage=slippage)
 
 
 def _mean(values: list[float]) -> float:

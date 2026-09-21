@@ -9,7 +9,7 @@ import streamlit as st
 
 from alphalens.backtest import engine, sweep
 from alphalens.charts import portfolio as portfolio_charts
-from alphalens.core.config import DEFAULT_COMMISSION, INITIAL_CAPITAL
+from alphalens.core.config import DEFAULT_COMMISSION, INITIAL_CAPITAL, SUGGESTED_SLIPPAGE
 from alphalens.core.currency import money
 from alphalens.data import csv_prices
 from alphalens.data.models import DataUnavailable
@@ -59,9 +59,13 @@ def _settings():
         if strategy.parameters:
             columns = st.columns(len(strategy.parameters))
             for column, parameter in zip(columns, strategy.parameters):
+                # Namespaced by strategy, not just page: two strategies reusing
+                # a parameter name (e.g. another "fast"/"slow" pair) would
+                # otherwise inherit each other's leftover session_state value
+                # instead of their own default.
                 params[parameter.key] = column.number_input(
                     parameter.label, parameter.minimum, parameter.maximum,
-                    parameter.default, key=f"bt_param_{parameter.key}")
+                    parameter.default, key=f"bt_param_{key}_{parameter.key}")
         layout.strategy_help(strategy)
 
         allow_short = st.toggle("Allow short positions", value=False, key="bt_short")
@@ -69,10 +73,16 @@ def _settings():
                                   float(INITIAL_CAPITAL), 10_000.0, key="bt_capital")
         cost_bps = st.number_input("Cost per trade (bps of notional)", 0.0, 100.0,
                                    DEFAULT_COMMISSION * 10_000, 1.0, key="bt_cost")
-    return source, period, upload, strategy, params, allow_short, capital, cost_bps / 10_000
+        slippage_bps = st.number_input("Slippage (bps of notional)", 0.0, 100.0,
+                                       SUGGESTED_SLIPPAGE * 10_000, 1.0, key="bt_slippage",
+                                       help="Price impact and spread the commission line "
+                                            "above doesn't cover. Zero assumes a fill at "
+                                            "exactly the close, which no real order gets.")
+    return (source, period, upload, strategy, params, allow_short, capital,
+            cost_bps / 10_000, slippage_bps / 10_000)
 
 
-def _sweep_section(frame, strategy, params, allow_short, commission, context_) -> None:
+def _sweep_section(frame, strategy, params, allow_short, commission, slippage, context_) -> None:
     if not strategy.parameters:
         return
     with st.expander("Parameter sweep"):
@@ -86,12 +96,12 @@ def _sweep_section(frame, strategy, params, allow_short, commission, context_) -
             grid_values[parameter.key] = column.multiselect(
                 parameter.label, options,
                 default=[v for v in options if parameter.minimum <= v <= parameter.maximum][:5],
-                key=f"bt_sweep_{parameter.key}")
+                key=f"bt_sweep_{strategy.key}_{parameter.key}")
         if not all(grid_values.values()):
             st.info("Pick at least one value for each parameter.")
             return
         grid = sweep.grid(frame, strategy, grid_values, allow_short=allow_short,
-                          commission=commission, context=context_)
+                          commission=commission, slippage=slippage, context=context_)
         if grid.empty:
             st.info("No valid combinations in that grid.")
             return
@@ -115,7 +125,8 @@ def render() -> None:
                        "invested (long, flat or short); a signal on one close is traded over "
                        "the next bar.")
 
-    source, period, upload, strategy, params, allow_short, capital, commission = _settings()
+    (source, period, upload, strategy, params, allow_short, capital,
+     commission, slippage) = _settings()
 
     try:
         frame, name, currency = _load(source, symbol, period, upload)
@@ -130,12 +141,14 @@ def render() -> None:
     try:
         result = engine.run_strategy(frame, strategy, symbol=name, currency=currency,
                                      allow_short=allow_short, capital=capital,
-                                     commission=commission, context=detections, **params)
+                                     commission=commission, slippage=slippage,
+                                     context=detections, **params)
     except ValueError as exc:
         st.warning(str(exc))
         return
     benchmark = engine.run_strategy(frame, get(BENCHMARK), symbol=name, currency=currency,
-                                    capital=capital, commission=commission, context=detections)
+                                    capital=capital, commission=commission,
+                                    slippage=slippage, context=detections)
 
     st.markdown(f"### {result.strategy} on {name}")
     st.caption(f"{str(result.dates[0])[:10]} → {str(result.dates[-1])[:10]} · "
@@ -151,6 +164,12 @@ def render() -> None:
                   f"{result.max_drawdown - benchmark.max_drawdown:+.2%} vs buy & hold")
     layout.metric(columns[4], "Trades", str(result.trades),
                   f"{result.exposure:.0%} in market", delta_color="off", delta_arrow="off")
+
+    if result.unrealized_entry_cost > 0:
+        st.caption(f"⚠ The strategy still holds a position of {result.final_position:+.2f} "
+                   f"on the last bar. Unwinding it would cost about "
+                   f"{money(result.unrealized_entry_cost, currency)}, not reflected above - "
+                   f"there's no bar after the data ends to charge it against.")
 
     st.plotly_chart(portfolio_charts.backtest_result(result, benchmark), width="stretch",
                     key="bt_equity")
@@ -185,4 +204,4 @@ def render() -> None:
                    "trade as a share of cash, so its P&L differs from this fully invested "
                    "backtest.")
 
-    _sweep_section(frame, strategy, params, allow_short, commission, detections)
+    _sweep_section(frame, strategy, params, allow_short, commission, slippage, detections)

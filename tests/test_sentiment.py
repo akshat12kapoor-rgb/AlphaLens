@@ -4,7 +4,7 @@ from datetime import date
 import pytest
 
 from alphalens.sentiment.feed import Headline, for_ticker, load, parse, tickers
-from alphalens.sentiment.scoring import score_headlines, score_text, tokenize
+from alphalens.sentiment.scoring import coverage, score_headlines, score_text, tokenize
 
 FEED = """\
 # comment line
@@ -112,6 +112,22 @@ def test_malformed_line_raises_with_its_line_number():
         parse("this is not a valid feed line\n")
 
 
+def test_a_typo_anywhere_rejects_the_whole_feed_by_design():
+    """All-or-nothing is deliberate (see the module docstring): a feed that
+    silently drops some headlines is worse than one that refuses to load."""
+    mixed = ("2024-03-01 | AAPL | Apple beats earnings expectations\n"
+             "this is not a valid feed line\n"
+             "2024-03-02 | AAPL | Apple shares tumble on weak guidance\n")
+    with pytest.raises(ValueError, match="line 2") as excinfo:
+        parse(mixed)
+    assert "2 good headline" in str(excinfo.value)
+
+
+def test_every_bad_line_is_named_not_just_the_first():
+    with pytest.raises(ValueError, match=r"line 1.*line 2"):
+        parse("nope one\nnope two\n")
+
+
 def test_missing_file_raises(tmp_path):
     with pytest.raises(FileNotFoundError):
         load(tmp_path / "nope.txt")
@@ -170,6 +186,46 @@ def test_sample_feed_scores_match_the_published_figures():
     assert scored["AAPL"].confidence == "high"
     assert scored["BA"].mean == pytest.approx(-0.3319, abs=0.0001)
     assert scored["BA"].label == "BEARISH"
+
+
+# ── coverage (readable vs. unparseable text) ────────────────────────────────
+
+def test_coverage_is_full_for_ordinary_english_including_possessives_and_hyphens():
+    assert coverage("Apple's well-known Q4 buyback tops $110 billion") == 1.0
+
+
+def test_coverage_is_zero_for_a_script_the_tokenizer_cannot_read():
+    assert coverage("苹果第四季度营收超预期") == 0.0
+
+
+def test_coverage_is_one_for_empty_or_purely_numeric_text():
+    assert coverage("") == 1.0
+    assert coverage("12% 2024 $50") == 1.0
+
+
+def test_html_entities_decode_before_scoring():
+    assert score_text("Procter &amp; Gamble raises outlook").coverage == 1.0
+    plain = score_text("the company's demand is strong")
+    encoded = score_text("the company&#39;s demand is strong")
+    assert encoded.score == plain.score
+
+
+def test_low_coverage_headlines_drag_down_confidence():
+    unreadable = [Headline(date(2024, 1, 1), "X", "苹果第四季度营收超预期") for _ in range(6)]
+    result = score_headlines(unreadable)["X"]
+    assert result.readable_share == 0.0
+    assert result.confidence == "low"
+
+
+def test_a_malformed_headline_does_not_sink_the_batch():
+    """Today's feed sources always give a non-empty str, but score_headlines
+    must not assume a future source does too."""
+    result = score_headlines([
+        Headline(date(2024, 1, 1), "X", None),
+        Headline(date(2024, 1, 1), "X", "shares surge on record profit"),
+    ])["X"]
+    assert len(result.scores) == 1
+    assert result.label == "BULLISH"
 
 
 def test_momentum_reads_the_latest_day_against_the_earlier_ones():
