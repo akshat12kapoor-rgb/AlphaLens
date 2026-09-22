@@ -68,7 +68,11 @@ def _settings():
                     parameter.default, key=f"bt_param_{key}_{parameter.key}")
         layout.strategy_help(strategy)
 
-        allow_short = st.toggle("Allow short positions", value=False, key="bt_short")
+        allow_short = st.toggle("Allow short positions", value=False, key="bt_short",
+                                help="Off: the strategy goes long or sits in cash, never "
+                                     "against the trend. On: a sell signal opens a short "
+                                     "instead of just closing out, so the strategy can also "
+                                     "profit when the price falls.")
         capital = st.number_input("Starting capital", 1_000.0, 100_000_000.0,
                                   float(INITIAL_CAPITAL), 10_000.0, key="bt_capital")
         cost_bps = st.number_input("Cost per trade (bps of notional)", 0.0, 100.0,
@@ -87,7 +91,12 @@ def _settings():
 def _sweep_section(frame, strategy, params, allow_short, commission, slippage, context_) -> None:
     if not strategy.parameters:
         return
-    with st.expander("Parameter sweep"):
+    # Collapsed and clearly labeled as advanced: this searches for the
+    # best-looking parameters on exactly the history being viewed, which is
+    # the textbook way to overfit a strategy. The warning is shown before the
+    # grid, not just appended to a plausible-looking result at the end.
+    with st.expander("⚠️ Parameter sweep (advanced — high risk of overfitting)"):
+        st.caption(sweep.WARNING)
         grid_values = {}
         columns = st.columns(len(strategy.parameters))
         for column, parameter in zip(columns, strategy.parameters):
