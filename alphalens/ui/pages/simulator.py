@@ -44,10 +44,20 @@ def render_chart(state: replay.Session, key: str) -> None:
     st.plotly_chart(figure, width="stretch", key=key)
 
 
+def _replay_status(state: replay.Session, symbol: str) -> str:
+    """One line, always consistent with what's actually loaded - never two
+    captions naming different tickers on the same screen."""
+    if not state.loaded:
+        return f"Not loaded yet. Press **Load data** below to simulate **{symbol}**."
+    if state.symbol == symbol:
+        return f"Simulating **{symbol}**"
+    return f"⚠️ Showing **{state.symbol}**. Load data to switch to **{symbol}**."
+
+
 def _sidebar(state: replay.Session, symbol: str) -> None:
     with st.sidebar:
         st.subheader("Replay")
-        st.caption(f"Simulating **{symbol}** · change it with the Active ticker picker")
+        st.caption(_replay_status(state, symbol))
 
         columns = st.columns(2)
         intervals = ["1d", "1h", "15m", "5m"]
@@ -61,9 +71,6 @@ def _sidebar(state: replay.Session, symbol: str) -> None:
             _load(symbol, period, interval)
             st.rerun()
 
-        if state.loaded and state.symbol != symbol:
-            st.caption(f"⚠️ Showing **{state.symbol}**. Load data to switch to **{symbol}**.")
-
         st.divider()
         st.subheader("Strategy")
         choice = st.radio("Strategy", CHOICES, format_func=label_for,
@@ -72,6 +79,7 @@ def _sidebar(state: replay.Session, symbol: str) -> None:
         params = {}
         if choice != MANUAL:
             strategy = get(choice)
+            st.caption(strategy.summary)
             for parameter in strategy.parameters:
                 # Namespaced by strategy, not just page: see the matching note
                 # in ui/pages/backtester.py.
@@ -91,8 +99,16 @@ def _sidebar(state: replay.Session, symbol: str) -> None:
         overlays["rsi"] = right.toggle("RSI", value=True, key="sim_ov_rsi")
         overlays["macd"] = left.toggle("MACD", value=False, key="sim_ov_macd")
         overlays["trades"] = right.toggle("Trades", value=True, key="sim_ov_trades")
-        overlays["gaps"] = left.toggle("FVG zones", value=False, key="sim_ov_gaps")
-        overlays["sweeps"] = right.toggle("Sweeps", value=False, key="sim_ov_sweeps")
+        overlays["gaps"] = left.toggle("FVG zones", value=False, key="sim_ov_gaps",
+                                       help="Fair Value Gaps: a 3-candle imbalance where "
+                                            "price moved so fast the first and third candles "
+                                            "don't overlap - shaded until price trades back "
+                                            "through the gap.")
+        overlays["sweeps"] = right.toggle("Sweeps", value=False, key="sim_ov_sweeps",
+                                          help="Liquidity sweeps: a wick beyond a recent "
+                                               "high or low that closes back inside the "
+                                               "range - stops resting past the level were "
+                                               "triggered and price rejected.")
         overlays["signals"] = left.toggle("Signals", value=False, key="sim_ov_signals")
         st.session_state["sim_overlays"] = overlays
 
