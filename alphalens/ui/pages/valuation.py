@@ -45,10 +45,21 @@ def _assumptions(defaults: Assumptions, symbol: str) -> Assumptions:
         # Keyed by symbol: an override chosen for one ticker must not silently
         # carry into another ticker's fair-value calculation after switching.
         override = st.toggle("Override sector multiples", value=False,
-                             key=f"val_override_{symbol}")
-        pe = st.number_input("P/E", 1.0, 100.0, 20.0, 0.5, key=f"val_pe_{symbol}") \
+                             key=f"val_override_{symbol}",
+                             help="By default the multiple comes from the sector average. "
+                                  "Turn this on to price the comparables off your own view "
+                                  "instead - what you think the market should pay per dollar "
+                                  "of earnings or EBITDA, not what it happens to be paying now.")
+        pe = st.number_input("P/E", 1.0, 100.0, 20.0, 0.5, key=f"val_pe_{symbol}",
+                             help="Price per dollar of annual earnings. Higher means the "
+                                  "market is paying more for the same earnings - "
+                                  "20-25x is typical for a stable large-cap.") \
             if override else None
-        ev = st.number_input("EV/EBITDA", 1.0, 50.0, 12.0, 0.5, key=f"val_ev_{symbol}") \
+        ev = st.number_input("EV/EBITDA", 1.0, 50.0, 12.0, 0.5, key=f"val_ev_{symbol}",
+                             help="Enterprise value per dollar of EBITDA - like P/E but "
+                                  "includes debt and cash, so it's comparable across "
+                                  "companies with different capital structures. "
+                                  "10-14x is typical for a stable large-cap.") \
             if override else None
 
         st.divider()
@@ -138,5 +149,15 @@ def render() -> None:
                            assumptions.stage2_years)
     st.plotly_chart(valuation_charts.sensitivity(grid, verdict.current_price, data.currency),
                     width="stretch", key="val_sensitivity")
+
+    st.divider()
+    left, right = st.columns(2)
+    with left:
+        st.page_link("views/backtester.py",
+                     label="See how a trend strategy did on this history",
+                     icon=":material/query_stats:")
+    with right:
+        st.page_link("views/sentiment.py", label="Check what the news says",
+                     icon=":material/newspaper:")
 
     st.caption("Educational use only — not financial advice.")

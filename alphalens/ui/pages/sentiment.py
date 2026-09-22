@@ -134,6 +134,8 @@ def render() -> None:
                        "Finance-tuned lexicon scoring of headlines, from -1 (bearish) to "
                        "+1 (bullish). It measures how the news reads, not where the price "
                        "is going.")
+    st.page_link("views/valuation.py", label="Does the news match the fundamentals?",
+                 icon=":material/calculate:")
 
     _headline_scorer()
     st.divider()
