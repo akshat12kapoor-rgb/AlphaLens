@@ -218,7 +218,7 @@ def _simulator_card(symbol: str, history) -> Read | None:
     return read
 
 
-def _join(names: list[str]) -> str:
+def join_names(names: list[str]) -> str:
     if len(names) == 1:
         return names[0]
     if len(names) == 2:
@@ -226,13 +226,15 @@ def _join(names: list[str]) -> str:
     return ", ".join(names[:-1]) + f", and {names[-1]}"
 
 
-def _takeaway(reads: list[Read | None]) -> str | None:
-    """One sentence combining what the cards above are each saying.
+def takeaway(reads: list[Read | None]) -> str | None:
+    """One sentence combining several tools' reads on the same ticker.
 
     This is the payoff of reading one ticker through four lenses instead of
     one - without it, the cards are just four numbers that never add up to a
     single answer. Needs at least two working reads to say anything; one
-    read alone isn't a synthesis, it's just that card again.
+    read alone isn't a synthesis, it's just that card again. Public (not
+    page-private) because the Watchlist page builds the same sentence for
+    tickers other than the active one.
     """
     available = [r for r in reads if r is not None]
     if len(available) < 2:
@@ -243,14 +245,14 @@ def _takeaway(reads: list[Read | None]) -> str | None:
     parts = " · ".join(f"**{r.name}** {r.detail}" for r in available)
 
     if bullish and bearish:
-        line = (f"They disagree: {_join(bullish)} "
+        line = (f"They disagree: {join_names(bullish)} "
                 f"{'leans' if len(bullish) == 1 else 'lean'} bullish, "
-                f"{_join(bearish)} {'leans' if len(bearish) == 1 else 'lean'} bearish.")
+                f"{join_names(bearish)} {'leans' if len(bearish) == 1 else 'lean'} bearish.")
     elif bullish:
-        line = (f"{_join(bullish)} {'is' if len(bullish) == 1 else 'are'} bullish, "
+        line = (f"{join_names(bullish)} {'is' if len(bullish) == 1 else 'are'} bullish, "
                 f"and nothing above contradicts it.")
     elif bearish:
-        line = (f"{_join(bearish)} {'is' if len(bearish) == 1 else 'are'} bearish, "
+        line = (f"{join_names(bearish)} {'is' if len(bearish) == 1 else 'are'} bearish, "
                 f"and nothing above contradicts it.")
     else:
         line = "None of them lean strongly either way right now."
@@ -258,9 +260,98 @@ def _takeaway(reads: list[Read | None]) -> str | None:
 
 
 def _synthesis(reads: list[Read | None]) -> None:
-    line = _takeaway(reads)
+    line = takeaway(reads)
     if line:
         st.info(layout.markdown_safe(line))
+
+
+# ── pure reads, for reuse by pages other than this one (e.g. Watchlist) ─────
+#
+# These duplicate a few lines of what the card functions above already
+# compute, rather than threading a shared helper through code that's also
+# doing per-card rendering (spinners, metrics, page_links) - not worth
+# entangling two pages' rendering to save a handful of near-identical lines.
+
+def valuation_read(profile, currency: str) -> Read | None:
+    if not profile.ok:
+        return None
+    valued = context.attempt(value, profile.value)
+    if not valued.ok:
+        return None
+    verdict = valued.value.verdict
+    lean = ("bullish" if verdict.decision == "BUY"
+            else "bearish" if verdict.decision == "SELL" else "neutral")
+    return Read("Valuation", lean, f"says {verdict.decision} ({verdict.upside:+.1%} to fair value)")
+
+
+def sentiment_read(symbol: str) -> Read | None:
+    stories = context.attempt(context.news, symbol)
+    if not stories.ok or not stories.value:
+        return None
+    headlines = [feed_module.Headline(date=s.day, ticker=symbol, text=s.title)
+                 for s in stories.value]
+    sentiment = score_headlines(headlines)[symbol]
+    lean = ("bullish" if sentiment.label == "BULLISH"
+            else "bearish" if sentiment.label == "BEARISH" else "neutral")
+    return Read("Sentiment", lean, f"reads {sentiment.label.lower()} ({sentiment.mean:+.2f})")
+
+
+def backtest_read(symbol: str, history, currency: str) -> Read | None:
+    if not history.ok:
+        return None
+    strategy = get("ma_crossover")
+    run = context.attempt(engine.run_strategy, history.value, strategy,
+                          symbol=symbol, currency=currency)
+    benchmark = context.attempt(engine.run_strategy, history.value,
+                                get("buy_and_hold"), symbol=symbol, currency=currency)
+    if not run.ok or not benchmark.ok:
+        return None
+    edge = run.value.total_return - benchmark.value.total_return
+    verb = "beating" if edge > 0 else "lagging" if edge < 0 else "matching"
+    return Read("Backtest", "context", f"has trend-following {verb} buy & hold")
+
+
+def technicals_read(history) -> Read | None:
+    if not history.ok:
+        return None
+    attempt = context.attempt(_technicals, history.value)
+    if not attempt.ok:
+        return None
+    signals = attempt.value
+    lean = "bullish" if signals["uptrend"] else "bearish"
+    trend = "an uptrend" if signals["uptrend"] else "a downtrend"
+    return Read("Technicals", lean, f"is in {trend} (RSI {signals['zone']})")
+
+
+def gather_reads(symbol: str) -> list[Read | None]:
+    """Every tool's read on `symbol`, for a ticker that isn't necessarily the
+    active one - one Yahoo round trip per tool, same as this page pays for
+    the active ticker."""
+    history = context.attempt(context.prices, symbol, "2y", "1d")
+    profile = context.attempt(context.fundamentals, symbol)
+    currency = profile.value.currency if profile.ok else context.currency_of(symbol)
+    return [valuation_read(profile, currency), sentiment_read(symbol),
+            backtest_read(symbol, history, currency), technicals_read(history)]
+
+
+def export_markdown(symbol: str, name: str, history, reads: list[Read | None]) -> str:
+    """A snapshot of this page as a plain-text file - the "send this to
+    someone" AlphaLens otherwise has no way to produce."""
+    lines = [f"# {name} ({symbol}) - AlphaLens summary",
+             f"Generated {pd.Timestamp.now():%Y-%m-%d %H:%M}", ""]
+    if history.ok:
+        lines.append(f"Last close: {history.value['close'].iloc[-1]:,.2f}")
+        lines.append("")
+    for read in reads:
+        if read is not None:
+            lines.append(f"- **{read.name}**: {read.detail}")
+    line = takeaway(reads)
+    if line:
+        lines += ["", "## Takeaway", line.replace("**", "")]
+    lines += ["", "---",
+              "Market data and news from Yahoo Finance, which can be delayed or "
+              "rate-limited. Educational use only - not financial advice."]
+    return "\n".join(lines)
 
 
 def render() -> None:
@@ -280,15 +371,23 @@ def render() -> None:
 
     columns = st.columns(4)
     with columns[0]:
-        valuation_read = _valuation_card(profile, currency)
+        card_valuation = _valuation_card(profile, currency)
     with columns[1]:
-        sentiment_read = _sentiment_card(symbol)
+        card_sentiment = _sentiment_card(symbol)
     with columns[2]:
-        backtest_read = _backtest_card(symbol, history, currency)
+        card_backtest = _backtest_card(symbol, history, currency)
     with columns[3]:
-        simulator_read = _simulator_card(symbol, history)
+        card_simulator = _simulator_card(symbol, history)
 
-    _synthesis([valuation_read, sentiment_read, backtest_read, simulator_read])
+    reads = [card_valuation, card_sentiment, card_backtest, card_simulator]
+    _synthesis(reads)
+
+    name = profile.value.name if profile.ok else symbol
+    st.download_button(
+        "Download summary", icon=":material/download:",
+        data=export_markdown(symbol, name, history, reads),
+        file_name=f"{symbol}_alphalens_summary.md", mime="text/markdown",
+        key="overview_export")
 
     st.caption("Market data and news from Yahoo Finance, which can be delayed or "
                "rate-limited. AlphaLens is for research, learning and simulation — it is not "
